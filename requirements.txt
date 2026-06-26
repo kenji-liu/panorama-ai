@@ -1,0 +1,4 @@
+flask>=3.0
+openai>=1.40
+anthropic>=0.49
+gunicorn>=21.2

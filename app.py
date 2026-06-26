@@ -1,0 +1,324 @@
+# -*- coding: utf-8 -*-
+"""
+現勘環景導覽系統 — 後端服務（多供應商可切換版）
+=========================================================
+- 提供靜態前端網頁（panorama-tour_5.html）
+- 提供 AI 影像分析 API：
+    POST /api/analyze   單張視角：損壞／異常辨識 + 現勘描述
+    POST /api/compare   兩個時期視角：跨時期變化偵測 + 比對報告
+    POST /api/calibrate 兩個時期視角：自動方位校準建議
+
+只靠一個環境變數 AI_PROVIDER 切換供應商，端點與前端完全不變：
+    AI_PROVIDER=gemini   Google Gemini 免費額度（額度較寬，預設）→ 設 GEMINI_API_KEY
+    AI_PROVIDER=groq     Groq 免費額度（Llama 4 視覺）          → 設 GROQ_API_KEY
+    AI_PROVIDER=claude   Anthropic Claude 付費（品質最高）       → 設 ANTHROPIC_API_KEY
+    AI_PROVIDER=custom   任何 OpenAI 相容端點（OpenRouter/Ollama 等）
+                         → 設 LLM_BASE_URL / LLM_MODEL / LLM_API_KEY
+
+各供應商可選的模型覆寫變數：GEMINI_MODEL / GROQ_MODEL / ANTHROPIC_MODEL / LLM_MODEL
+日常用免費（gemini 或 groq），重要案件改 AI_PROVIDER=claude 即可，無需改程式。
+"""
+
+import os
+import json
+import base64
+import binascii
+
+from flask import Flask, request, jsonify, send_from_directory
+
+app = Flask(__name__, static_folder=None)
+
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+INDEX_FILE = "panorama-tour_5.html"
+
+MAX_TOKENS = int(os.environ.get("LLM_MAX_TOKENS", "1500"))
+MAX_IMAGE_BYTES = 4 * 1024 * 1024  # 約 4MB
+
+# ---- 供應商設定表 ----
+PROVIDERS = {
+    "gemini": {
+        "kind": "openai",
+        "base": "https://generativelanguage.googleapis.com/v1beta/openai/",
+        "model": os.environ.get("GEMINI_MODEL", "gemini-2.0-flash"),
+        "keys": ["GEMINI_API_KEY", "GOOGLE_API_KEY", "LLM_API_KEY"],
+    },
+    "groq": {
+        "kind": "openai",
+        "base": "https://api.groq.com/openai/v1",
+        "model": os.environ.get("GROQ_MODEL", "meta-llama/llama-4-scout-17b-16e-instruct"),
+        "keys": ["GROQ_API_KEY", "LLM_API_KEY"],
+    },
+    "claude": {
+        "kind": "anthropic",
+        "base": None,
+        "model": os.environ.get("ANTHROPIC_MODEL", "claude-opus-4-8"),
+        "keys": ["ANTHROPIC_API_KEY", "LLM_API_KEY"],
+    },
+    "custom": {
+        "kind": "openai",
+        "base": os.environ.get("LLM_BASE_URL", ""),
+        "model": os.environ.get("LLM_MODEL", ""),
+        "keys": ["LLM_API_KEY"],
+    },
+}
+
+PROVIDER = os.environ.get("AI_PROVIDER", "gemini").lower()
+if PROVIDER not in PROVIDERS:
+    PROVIDER = "gemini"
+CFG = PROVIDERS[PROVIDER]
+
+
+def _api_key():
+    for name in CFG["keys"]:
+        v = os.environ.get(name)
+        if v:
+            return v
+    return None
+
+
+_openai_client = None
+_anthropic_client = None
+
+
+def _get_openai():
+    global _openai_client
+    if _openai_client is None:
+        from openai import OpenAI
+        key = _api_key()
+        if not key:
+            raise RuntimeError("尚未設定 API 金鑰（%s）" % " / ".join(CFG["keys"]))
+        _openai_client = OpenAI(api_key=key, base_url=CFG["base"] or None)
+    return _openai_client
+
+
+def _get_anthropic():
+    global _anthropic_client
+    if _anthropic_client is None:
+        import anthropic
+        if not _api_key():
+            raise RuntimeError("尚未設定 ANTHROPIC_API_KEY")
+        _anthropic_client = anthropic.Anthropic(api_key=_api_key())
+    return _anthropic_client
+
+
+# ---- 輸出結構（以提示告訴模型，並用於前端渲染）----
+ANALYZE_SHAPE = (
+    '{'
+    '"summary": "一句話總結畫面狀況", '
+    '"overall_condition": "良好｜輕微異常｜中度損壞｜嚴重損壞｜無法判定 其中之一", '
+    '"observations": [{"item": "觀察到的項目或異常", "severity": "資訊｜注意｜警告｜嚴重 其中之一", "location": "畫面中相對位置"}], '
+    '"report": "可貼入現勘報告的中文敘述段落"'
+    '}'
+)
+COMPARE_SHAPE = (
+    '{'
+    '"summary": "一句話總結兩期主要差異", '
+    '"change_level": "無明顯變化｜輕微變化｜中度變化｜顯著變化｜無法判定 其中之一", '
+    '"changes": [{"description": "變化內容", "change_type": "沖刷｜淤積｜結構位移｜植被變化｜新增設施｜損壞｜其他 其中之一", "severity": "資訊｜注意｜警告｜嚴重 其中之一", "location": "相對位置"}], '
+    '"report": "可貼入現勘報告的跨時期比對敘述段落"'
+    '}'
+)
+CALIBRATE_SHAPE = (
+    '{'
+    '"aligned": true 或 false, '
+    '"suggested_direction": "不需調整｜將第二期向左旋轉｜將第二期向右旋轉｜無法判定 其中之一", '
+    '"landmark": "用來對齊的共同地標描述", '
+    '"note": "給操作者的校準建議"'
+    '}'
+)
+
+SYS_ANALYZE = (
+    "你是台灣水利／水土保持工程的現勘判釋專家，協助判讀治理設施（魚道、固床工、防砂壩、護岸、平台等）"
+    "的環景影像。請以繁體中文，客觀、具體地辨識畫面中的損壞或異常（裂縫、掏空、護坡破損、堆積物、"
+    "結構傾斜、沖刷等），標明相對位置與嚴重度。若畫面資訊不足，誠實說明無法判定，不要臆測。\n"
+    "務必只輸出符合以下結構的 JSON，不要加任何說明文字或程式碼框：\n" + ANALYZE_SHAPE
+)
+SYS_COMPARE = (
+    "你是台灣水利／水土保持工程的現勘判釋專家。以下是同一監測點位、兩個不同時期的環景視角"
+    "（第一張為較早時期，第二張為較晚時期）。請以繁體中文逐項比對，偵測跨時期變化"
+    "（沖刷、淤積、結構位移、植被變化、新增設施、損壞等），標明位置與嚴重度。"
+    "若方位未對齊或資訊不足請於報告說明，不要臆測無法佐證的變化。\n"
+    "務必只輸出符合以下結構的 JSON，不要加任何說明文字或程式碼框：\n" + COMPARE_SHAPE
+)
+SYS_CALIBRATE = (
+    "你是影像對位助手。以下是同一地點、兩個時期的環景視角。請找出可作為對齊基準的共同地標"
+    "（電線桿、橋墩、田埂交界、固定構造物等），判斷第二張相對第一張需向左或向右旋轉才能對齊。\n"
+    "務必只輸出符合以下結構的 JSON，不要加任何說明文字或程式碼框：\n" + CALIBRATE_SHAPE
+)
+
+
+def _split_data_url(data_url):
+    """檢查並拆解 data:image/...;base64,xxx，回傳 (media_type, base64_data)。"""
+    if not isinstance(data_url, str) or not data_url.startswith("data:"):
+        raise ValueError("影像格式不正確（需為 data URL）")
+    try:
+        header, b64 = data_url.split(",", 1)
+        media_type = header.split(";")[0].split(":", 1)[1]
+    except (ValueError, IndexError):
+        raise ValueError("影像 data URL 解析失敗")
+    if media_type not in ("image/jpeg", "image/png", "image/webp", "image/gif"):
+        raise ValueError("不支援的影像格式：" + media_type)
+    try:
+        raw = base64.b64decode(b64, validate=True)
+    except (binascii.Error, ValueError):
+        raise ValueError("影像 base64 解碼失敗")
+    if len(raw) > MAX_IMAGE_BYTES:
+        raise ValueError("單張影像過大（請降低解析度）")
+    return media_type, b64
+
+
+def text_item(t):
+    return {"type": "text", "text": t}
+
+
+def image_item(data_url):
+    _split_data_url(data_url)  # 先驗證；無效則丟 ValueError
+    return {"type": "image", "data_url": data_url}
+
+
+def _extract_json(text):
+    """從模型輸出中萃取 JSON 物件（容忍 ```json 圍欄或前後雜訊）。"""
+    s = (text or "").strip()
+    if s.startswith("```"):
+        s = s.split("```", 2)[1] if s.count("```") >= 2 else s.strip("`")
+        if s.lstrip().lower().startswith("json"):
+            s = s.lstrip()[4:]
+    try:
+        return json.loads(s)
+    except ValueError:
+        start, end = s.find("{"), s.rfind("}")
+        if start != -1 and end != -1 and end > start:
+            return json.loads(s[start:end + 1])
+        raise ValueError("模型未回傳有效 JSON")
+
+
+def _run_openai(system, items):
+    client = _get_openai()
+    content = []
+    for it in items:
+        if it["type"] == "text":
+            content.append({"type": "text", "text": it["text"]})
+        else:
+            content.append({"type": "image_url", "image_url": {"url": it["data_url"]}})
+    messages = [{"role": "system", "content": system}, {"role": "user", "content": content}]
+    try:
+        resp = client.chat.completions.create(
+            model=CFG["model"], max_tokens=MAX_TOKENS, temperature=0.2,
+            messages=messages, response_format={"type": "json_object"},
+        )
+    except Exception:  # noqa: BLE001  某些端點不支援 json_object，退回一般模式
+        resp = client.chat.completions.create(
+            model=CFG["model"], max_tokens=MAX_TOKENS, temperature=0.2, messages=messages,
+        )
+    return _extract_json(resp.choices[0].message.content)
+
+
+def _run_anthropic(system, items):
+    client = _get_anthropic()
+    content = []
+    for it in items:
+        if it["type"] == "text":
+            content.append({"type": "text", "text": it["text"]})
+        else:
+            mt, b64 = _split_data_url(it["data_url"])
+            content.append({"type": "image", "source": {"type": "base64", "media_type": mt, "data": b64}})
+    resp = client.messages.create(
+        model=CFG["model"], max_tokens=MAX_TOKENS, system=system,
+        messages=[{"role": "user", "content": content}],
+    )
+    if getattr(resp, "stop_reason", None) == "refusal":
+        raise RuntimeError("模型基於安全考量婉拒此請求")
+    text = next((b.text for b in resp.content if b.type == "text"), "")
+    return _extract_json(text)
+
+
+def run_llm(system, items):
+    if CFG["kind"] == "anthropic":
+        return _run_anthropic(system, items)
+    return _run_openai(system, items)
+
+
+@app.route("/api/analyze", methods=["POST"])
+def api_analyze():
+    data = request.get_json(silent=True) or {}
+    try:
+        img = image_item(data.get("image", ""))
+    except ValueError as e:
+        return jsonify({"error": str(e)}), 400
+    point = (data.get("point_name") or "").strip()
+    epoch = (data.get("epoch_label") or "").strip()
+    items = [
+        text_item("監測點位：%s。時期：%s。請辨識此畫面的損壞／異常並產生現勘描述。"
+                  % (point or "未提供", epoch or "未提供")),
+        img,
+    ]
+    try:
+        return jsonify(run_llm(SYS_ANALYZE, items))
+    except Exception as e:  # noqa: BLE001
+        return jsonify({"error": str(e)}), 502
+
+
+@app.route("/api/compare", methods=["POST"])
+def api_compare():
+    data = request.get_json(silent=True) or {}
+    try:
+        img_a = image_item(data.get("image_a", ""))
+        img_b = image_item(data.get("image_b", ""))
+    except ValueError as e:
+        return jsonify({"error": str(e)}), 400
+    point = (data.get("point_name") or "").strip()
+    label_a = (data.get("label_a") or "較早時期").strip()
+    label_b = (data.get("label_b") or "較晚時期").strip()
+    items = [
+        text_item("監測點位：%s。第一張＝%s，第二張＝%s。請比對兩期並偵測變化。"
+                  % (point or "未提供", label_a, label_b)),
+        img_a, img_b,
+    ]
+    try:
+        return jsonify(run_llm(SYS_COMPARE, items))
+    except Exception as e:  # noqa: BLE001
+        return jsonify({"error": str(e)}), 502
+
+
+@app.route("/api/calibrate", methods=["POST"])
+def api_calibrate():
+    data = request.get_json(silent=True) or {}
+    try:
+        img_a = image_item(data.get("image_a", ""))
+        img_b = image_item(data.get("image_b", ""))
+    except ValueError as e:
+        return jsonify({"error": str(e)}), 400
+    items = [
+        text_item("第一張為基準時期，第二張為待對齊時期。請判斷第二張需向左或向右旋轉以對齊第一張。"),
+        img_a, img_b,
+    ]
+    try:
+        return jsonify(run_llm(SYS_CALIBRATE, items))
+    except Exception as e:  # noqa: BLE001
+        return jsonify({"error": str(e)}), 502
+
+
+@app.route("/api/health")
+def health():
+    return jsonify({
+        "ok": True,
+        "provider": PROVIDER,
+        "kind": CFG["kind"],
+        "model": CFG["model"],
+        "key_set": bool(_api_key()),
+    })
+
+
+@app.route("/")
+def index():
+    return send_from_directory(BASE_DIR, INDEX_FILE)
+
+
+@app.route("/<path:filename>")
+def static_files(filename):
+    return send_from_directory(BASE_DIR, filename)
+
+
+if __name__ == "__main__":
+    port = int(os.environ.get("PORT", "8000"))
+    app.run(host="0.0.0.0", port=port)

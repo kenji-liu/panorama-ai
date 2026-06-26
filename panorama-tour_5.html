@@ -1,0 +1,3165 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>現勘環景導覽系統</title>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.js"></script>
+<style>
+  :root{
+    --bg-deep:#15181c;
+    --bg-panel:#1d2126;
+    --bg-panel-raised:#262b31;
+    --line:#363c44;
+    --line-soft:#2a2f36;
+    --text-hi:#f0ede6;
+    --text-mid:#9aa0a8;
+    --text-low:#5e646c;
+    --accent:#e8743b;
+    --accent-dim:#7a4326;
+    --accent-glow:rgba(232,116,59,0.35);
+    --ok:#5fa884;
+    --map-pin:#4a90c2;
+    --map-pin-glow:rgba(74,144,194,0.35);
+    --mono: 'JetBrains Mono','SFMono-Regular',Consolas,monospace;
+    --sans: -apple-system,BlinkMacSystemFont,'Segoe UI','PingFang TC','Microsoft JhengHei',sans-serif;
+  }
+  *{box-sizing:border-box; -webkit-tap-highlight-color:transparent;}
+  html,body{
+    margin:0; padding:0; height:100%; background:var(--bg-deep); color:var(--text-hi);
+    font-family:var(--sans); overflow:hidden;
+  }
+  #app{ position:relative; width:100vw; height:100vh; display:flex; }
+
+  /* ===== 頂部模式切換列 ===== */
+  #mode-switch{
+    position:fixed; top:18px; left:50%; transform:translateX(-50%); z-index:200;
+    display:flex; background:rgba(29,33,38,0.92); border:1px solid var(--line); border-radius:9px;
+    padding:3px; backdrop-filter:blur(8px); gap:2px;
+  }
+  .mode-btn{
+    font-family:var(--sans); font-size:12.5px; font-weight:600; padding:7px 16px; border-radius:6px;
+    cursor:pointer; color:var(--text-mid); display:flex; align-items:center; gap:6px;
+  }
+  .mode-btn svg{ width:14px; height:14px; }
+  .mode-btn.active{ background:var(--accent); color:#1a1208; }
+  .mode-btn:not(.active):hover{ color:var(--text-hi); }
+
+  /* ===== 資料管理工具列 ===== */
+  #data-toolbar{
+    position:fixed; top:18px; right:18px; z-index:200; display:flex; align-items:center; gap:10px;
+  }
+  #save-status{
+    display:flex; align-items:center; gap:6px; font-family:var(--mono); font-size:10.5px; color:var(--text-low);
+    background:rgba(29,33,38,0.85); border:1px solid var(--line); padding:6px 11px; border-radius:7px;
+    backdrop-filter:blur(6px);
+  }
+  .save-dot{ width:6px; height:6px; border-radius:50%; background:var(--ok); flex-shrink:0; transition:background .2s; }
+  .save-dot.saving{ background:var(--accent); animation:save-pulse 0.9s ease-in-out infinite; }
+  @keyframes save-pulse{ 0%,100%{ opacity:1; } 50%{ opacity:0.35; } }
+
+  .data-menu-wrap{ position:relative; }
+  #data-menu{
+    position:absolute; top:42px; right:0; width:240px; background:var(--bg-panel); border:1px solid var(--line);
+    border-radius:10px; padding:6px; box-shadow:0 16px 40px rgba(0,0,0,0.5); display:none; z-index:70;
+  }
+  #data-menu.show{ display:block; }
+  .data-menu-item{
+    display:flex; align-items:center; gap:11px; padding:9px 10px; border-radius:7px; cursor:pointer;
+  }
+  .data-menu-item:hover{ background:var(--bg-panel-raised); }
+  .data-menu-item svg{ width:17px; height:17px; color:var(--text-mid); flex-shrink:0; }
+  .data-menu-item:hover svg{ color:var(--accent); }
+  .data-menu-item.danger:hover svg{ color:#d96a5a; }
+  .data-menu-item.danger:hover .dm-ttl{ color:#d96a5a; }
+  .dm-ttl{ font-size:12.5px; font-weight:600; color:var(--text-hi); }
+  .dm-sub{ font-family:var(--mono); font-size:10px; color:var(--text-low); margin-top:1px; }
+  .data-menu-divider{ height:1px; background:var(--line-soft); margin:5px 4px; }
+
+  @media (max-width:720px){
+    #data-toolbar{ top:auto; bottom:14px; right:14px; }
+    #save-status{ display:none; }
+  }
+
+  /* ===== 左側場景清冊 (導覽模式) ===== */
+  #sidebar{
+    width:280px; min-width:280px; height:100%;
+    background:var(--bg-panel); border-right:1px solid var(--line);
+    display:flex; flex-direction:column; z-index:30;
+    transition:transform .25s ease;
+  }
+  #sidebar.collapsed{ transform:translateX(-280px); }
+  .sb-header{ padding:18px 18px 14px; border-bottom:1px solid var(--line-soft); }
+  .sb-eyebrow{
+    font-family:var(--mono); font-size:10px; letter-spacing:.18em; color:var(--accent);
+    text-transform:uppercase; margin:0 0 4px;
+  }
+  .sb-title{ font-size:16px; font-weight:600; margin:0; color:var(--text-hi); letter-spacing:.01em;}
+  .sb-sub{ font-family:var(--mono); font-size:11px; color:var(--text-low); margin-top:6px;}
+  .sb-actions{ display:flex; gap:8px; padding:14px 18px; border-bottom:1px solid var(--line-soft);}
+  .btn{
+    font-family:var(--sans); font-size:12.5px; font-weight:600; cursor:pointer;
+    border-radius:6px; border:1px solid var(--line); background:var(--bg-panel-raised);
+    color:var(--text-hi); padding:8px 12px; display:flex; align-items:center; gap:6px;
+    transition:border-color .15s, background .15s;
+  }
+  .btn:hover{ border-color:var(--accent-dim); background:#2b2018; }
+  .btn-primary{ background:var(--accent); border-color:var(--accent); color:#1a1208; flex:1; justify-content:center;}
+  .btn.active{ background:var(--ok); border-color:var(--ok); color:#0c1a12; }
+  .btn-primary:hover{ background:#f2853f; }
+  .btn-ghost{ background:transparent; }
+  .btn-sm{ padding:6px 10px; font-size:11.5px; }
+  .btn svg{ width:14px; height:14px; flex-shrink:0; }
+
+  #scene-list{ flex:1; overflow-y:auto; padding:10px 10px 90px; }
+  #scene-list::-webkit-scrollbar{ width:6px; }
+  #scene-list::-webkit-scrollbar-thumb{ background:var(--line); border-radius:3px; }
+
+  .scene-card{
+    position:relative; display:flex; align-items:center; gap:10px;
+    padding:9px 10px; border-radius:8px; margin-bottom:6px; cursor:pointer;
+    border:1px solid transparent; background:transparent;
+  }
+  .scene-card:hover{ background:var(--bg-panel-raised); }
+  .scene-card.active{ background:rgba(232,116,59,0.1); border-color:var(--accent-dim); }
+  .scene-idx{ font-family:var(--mono); font-size:10px; color:var(--text-low); width:20px; flex-shrink:0; }
+  .scene-card.active .scene-idx{ color:var(--accent); }
+  .scene-thumb{
+    width:46px; height:30px; border-radius:4px; background:var(--bg-deep) center/cover no-repeat;
+    flex-shrink:0; border:1px solid var(--line-soft);
+  }
+  .scene-meta{ flex:1; min-width:0; }
+  .scene-name{ font-size:13px; font-weight:500; color:var(--text-hi); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .scene-tag{ font-family:var(--mono); font-size:10px; color:var(--text-low); margin-top:1px;}
+  .scene-del{
+    width:20px; height:20px; flex-shrink:0; border-radius:4px; display:flex; align-items:center; justify-content:center;
+    color:var(--text-low); opacity:0; cursor:pointer;
+  }
+  .scene-card:hover .scene-del{ opacity:1; }
+  .scene-del:hover{ color:#d96a5a; background:rgba(217,106,90,0.12); }
+  .sb-empty{ padding:30px 18px; text-align:center; color:var(--text-low); font-size:12.5px; line-height:1.7; }
+  .sb-empty svg{ width:32px; height:32px; color:var(--line); margin-bottom:10px; }
+  .sb-footer{
+    position:absolute; bottom:0; left:0; width:280px; padding:12px 18px;
+    background:linear-gradient(transparent, var(--bg-panel) 40%);
+    font-family:var(--mono); font-size:10.5px; color:var(--text-low); pointer-events:none;
+  }
+
+  #sidebar-toggle{
+    position:fixed; top:18px; left:18px; z-index:200;
+    width:34px; height:34px; border-radius:7px; background:var(--bg-panel);
+    border:1px solid var(--line); display:flex; align-items:center; justify-content:center;
+    cursor:pointer; color:var(--text-hi); transition:background .15s;
+  }
+  #sidebar-toggle:hover{ background:var(--bg-panel-raised); }
+  #sidebar-toggle svg{ width:16px; height:16px; }
+
+  /* ===== 主舞台（全景）===== */
+  #stage-wrap{ flex:1; position:relative; height:100%; }
+  #stage{ position:relative; width:100%; height:100%; overflow:hidden; background:#0c0e10; cursor:grab; }
+  #stage.dragging{ cursor:grabbing; }
+  #stage.hotspot-mode{ cursor:crosshair; }
+  #pano-canvas{ position:absolute; inset:0; }
+
+  #topbar{
+    position:absolute; top:0; left:0; right:0; padding:18px 24px 18px 64px;
+    display:flex; justify-content:space-between; align-items:flex-start;
+    background:linear-gradient(180deg, rgba(12,14,16,0.7), transparent);
+    z-index:20; pointer-events:none;
+  }
+  #topbar > *{ pointer-events:auto; }
+  .stage-title-wrap{ display:flex; flex-direction:column; gap:3px; }
+  .stage-eyebrow{ font-family:var(--mono); font-size:10px; letter-spacing:.16em; color:var(--accent); text-transform:uppercase; }
+  .stage-title{ font-size:18px; font-weight:600; color:var(--text-hi); }
+  .stage-coords{ font-family:var(--mono); font-size:10.5px; color:var(--text-mid); }
+  .top-tools{ display:flex; gap:8px; }
+  .icon-btn{
+    width:36px; height:36px; border-radius:8px; background:rgba(29,33,38,0.85);
+    border:1px solid var(--line); backdrop-filter:blur(6px);
+    display:flex; align-items:center; justify-content:center; cursor:pointer; color:var(--text-hi);
+  }
+  .icon-btn:hover{ border-color:var(--accent-dim); color:var(--accent); }
+  .icon-btn.active{ background:var(--accent); border-color:var(--accent); color:#1a1208; }
+  .icon-btn svg{ width:17px; height:17px; }
+
+  #bottombar{ position:absolute; bottom:18px; right:24px; z-index:20; display:flex; align-items:center; gap:10px; }
+  .zoom-group{
+    display:flex; align-items:center; background:rgba(29,33,38,0.85); border:1px solid var(--line);
+    border-radius:8px; backdrop-filter:blur(6px); overflow:hidden;
+  }
+  .zoom-btn{ width:34px; height:34px; display:flex; align-items:center; justify-content:center; cursor:pointer; color:var(--text-hi);}
+  .zoom-btn:hover{ background:var(--bg-panel-raised); color:var(--accent); }
+  .zoom-divider{ width:1px; height:18px; background:var(--line); }
+  .fov-readout{ font-family:var(--mono); font-size:10.5px; color:var(--text-mid); padding:0 10px; min-width:46px; text-align:center;}
+
+  #empty-stage{
+    position:absolute; inset:0; display:flex; flex-direction:column; align-items:center; justify-content:center;
+    gap:18px; text-align:center; padding:40px;
+  }
+  #empty-stage.hidden{ display:none; }
+  .empty-icon{
+    width:64px; height:64px; border-radius:14px; border:1px solid var(--line); background:var(--bg-panel);
+    display:flex; align-items:center; justify-content:center; color:var(--accent);
+  }
+  .empty-icon svg{ width:28px; height:28px; }
+  .empty-title{ font-size:17px; font-weight:600; color:var(--text-hi); }
+  .empty-sub{ font-size:13px; color:var(--text-mid); max-width:340px; line-height:1.7; }
+  .empty-sub code{ font-family:var(--mono); color:var(--accent); background:rgba(232,116,59,0.08); padding:1px 5px; border-radius:3px; font-size:12px;}
+
+  .hotspot{ position:absolute; width:38px; height:38px; margin:-19px 0 0 -19px; cursor:pointer; z-index:15; display:flex; align-items:center; justify-content:center; }
+  .hotspot-ring{ position:absolute; inset:0; border-radius:50%; border:1.5px solid var(--accent); animation:ring-pulse 2.2s ease-out infinite; }
+  @keyframes ring-pulse{ 0%{ transform:scale(0.5); opacity:.9; } 70%{ transform:scale(1.5); opacity:0; } 100%{ opacity:0; } }
+  .hotspot-core{ width:14px; height:14px; border-radius:50%; background:var(--accent); border:2px solid #1a1208; box-shadow:0 0 0 2px var(--accent), 0 0 14px var(--accent-glow); position:relative; z-index:2; }
+  .hotspot-label{
+    position:absolute; top:44px; left:50%; transform:translateX(-50%);
+    font-family:var(--mono); font-size:10.5px; white-space:nowrap; color:var(--text-hi);
+    background:rgba(20,22,25,0.9); border:1px solid var(--line); padding:3px 8px; border-radius:5px;
+    opacity:0; pointer-events:none; transition:opacity .15s; backdrop-filter:blur(4px);
+  }
+  .hotspot:hover .hotspot-label{ opacity:1; }
+
+  #hotspot-banner{
+    position:absolute; top:80px; left:50%; transform:translateX(-50%); z-index:25;
+    background:rgba(232,116,59,0.12); border:1px solid var(--accent-dim); color:var(--accent);
+    font-family:var(--mono); font-size:11.5px; padding:8px 16px; border-radius:7px;
+    display:none; align-items:center; gap:10px; backdrop-filter:blur(6px);
+  }
+  #hotspot-banner.show{ display:flex; }
+  #hotspot-banner button{
+    font-family:var(--sans); font-size:11px; font-weight:600; background:transparent; color:var(--accent);
+    border:1px solid var(--accent-dim); border-radius:5px; padding:3px 9px; cursor:pointer;
+  }
+
+  /* ===== 比對模式 ===== */
+  #compare-view{ position:absolute; inset:0; display:none; }
+  #compare-view.show{ display:flex; }
+
+  #map-panel{
+    width:46%; min-width:340px; height:100%; background:var(--bg-deep); border-right:1px solid var(--line);
+    position:relative; display:flex; flex-direction:column;
+  }
+  #map-header{
+    padding:64px 20px 14px; border-bottom:1px solid var(--line-soft); background:var(--bg-panel);
+    display:flex; justify-content:space-between; align-items:flex-end; gap:10px;
+  }
+  #map-header .ttl{ font-size:14px; font-weight:700; }
+  #map-header .sub{ font-family:var(--mono); font-size:10.5px; color:var(--text-low); margin-top:3px; }
+  #map-header-actions{ display:flex; gap:6px; }
+
+  #map-canvas-wrap{
+    flex:1; position:relative; overflow:hidden; background:
+      repeating-linear-gradient(0deg, #1a1d21 0 1px, #14171a 1px 28px),
+      repeating-linear-gradient(90deg, #1a1d21 0 1px, #14171a 1px 28px);
+    cursor:grab;
+  }
+  #map-canvas-wrap.dragging{ cursor:grabbing; }
+  #map-canvas-wrap.placing{ cursor:crosshair; }
+  #map-content{ position:absolute; top:0; left:0; transform-origin:0 0; }
+  #map-content img{ display:block; max-width:none; user-select:none; -webkit-user-drag:none; }
+
+  #map-no-base{
+    position:absolute; inset:0; display:flex; flex-direction:column; align-items:center; justify-content:center;
+    gap:14px; text-align:center; padding:30px; z-index:2;
+  }
+  #map-no-base.hidden{ display:none; }
+  #map-no-base svg{ width:40px; height:40px; color:var(--line); }
+  #map-no-base p{ font-size:12.5px; color:var(--text-mid); max-width:260px; line-height:1.7; }
+
+  .map-pin{
+    position:absolute; width:26px; height:26px; margin:-26px -13px 0; cursor:pointer; z-index:10;
+  }
+  .map-pin svg{ width:26px; height:26px; filter:drop-shadow(0 2px 4px rgba(0,0,0,0.4)); }
+  .map-pin .pin-fill{ fill:var(--map-pin); }
+  .map-pin.selected .pin-fill{ fill:var(--accent); }
+  .map-pin .pin-count{
+    position:absolute; top:1px; left:50%; transform:translateX(-50%);
+    font-family:var(--mono); font-size:8.5px; font-weight:700; color:#0c0e10; line-height:1;
+  }
+  .map-pin-ghost{
+    position:absolute; width:22px; height:22px; margin:-22px -11px 0; pointer-events:none; z-index:9; opacity:.85;
+  }
+
+  #map-zoom{
+    position:absolute; bottom:16px; right:16px; z-index:5;
+    display:flex; flex-direction:column; background:rgba(29,33,38,0.85); border:1px solid var(--line);
+    border-radius:8px; overflow:hidden; backdrop-filter:blur(6px);
+  }
+  #map-zoom .zoom-btn{ width:32px; height:32px; }
+
+  #map-placing-banner{
+    position:absolute; top:14px; left:50%; transform:translateX(-50%); z-index:8;
+    background:rgba(232,116,59,0.14); border:1px solid var(--accent-dim); color:var(--accent);
+    font-family:var(--mono); font-size:11px; padding:7px 14px; border-radius:7px;
+    display:none; align-items:center; gap:10px; backdrop-filter:blur(6px);
+  }
+  #map-placing-banner.show{ display:flex; }
+  #map-placing-banner button{
+    font-family:var(--sans); font-size:10.5px; font-weight:600; background:transparent; color:var(--accent);
+    border:1px solid var(--accent-dim); border-radius:5px; padding:2px 8px; cursor:pointer;
+  }
+
+  /* 右側：點位多時期全景檢視 */
+  #point-panel{ flex:1; height:100%; display:flex; flex-direction:column; background:#0c0e10; position:relative; }
+  #point-empty{
+    flex:1; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:16px;
+    text-align:center; padding:40px;
+  }
+  #point-empty.hidden{ display:none; }
+  #point-empty svg{ width:48px; height:48px; color:var(--line); }
+  #point-empty p{ font-size:13px; color:var(--text-mid); max-width:300px; line-height:1.7; }
+
+  #point-active{ flex:1; display:none; flex-direction:column; height:100%; }
+  #point-active.show{ display:flex; }
+
+  #point-header{
+    padding:64px 20px 0; background:var(--bg-panel); border-bottom:1px solid var(--line-soft);
+  }
+  #point-header .ttl-row{ display:flex; justify-content:space-between; align-items:flex-start; margin-bottom:14px; }
+  #point-header .ttl{ font-size:15px; font-weight:700; }
+  #point-header .sub{ font-family:var(--mono); font-size:10.5px; color:var(--text-low); margin-top:3px; }
+
+  #epoch-tabs{ display:flex; gap:4px; overflow-x:auto; padding-bottom:0; }
+  #epoch-tabs::-webkit-scrollbar{ height:0; }
+  .epoch-tab{
+    font-family:var(--mono); font-size:12px; font-weight:600; padding:9px 14px; cursor:pointer;
+    color:var(--text-mid); border-bottom:2px solid transparent; white-space:nowrap; flex-shrink:0;
+    display:flex; align-items:center; gap:6px;
+  }
+  .epoch-tab:hover{ color:var(--text-hi); }
+  .epoch-tab.active{ color:var(--accent); border-bottom-color:var(--accent); }
+  .epoch-tab .dot{ width:5px; height:5px; border-radius:50%; background:var(--text-low); }
+  .epoch-tab.active .dot{ background:var(--accent); }
+  .epoch-add-tab{
+    font-family:var(--mono); font-size:13px; padding:9px 12px; cursor:pointer; color:var(--text-low); flex-shrink:0;
+  }
+  .epoch-add-tab:hover{ color:var(--accent); }
+
+  #point-stage{ flex:1; position:relative; overflow:hidden; background:#0c0e10; cursor:grab; }
+  #point-stage.dragging{ cursor:grabbing; }
+  #point-canvas{ position:absolute; inset:0; }
+  #point-no-epoch{
+    position:absolute; inset:0; display:flex; flex-direction:column; align-items:center; justify-content:center;
+    gap:14px; text-align:center; padding:30px;
+  }
+  #point-no-epoch.hidden{ display:none; }
+  #point-no-epoch svg{ width:36px; height:36px; color:var(--line); }
+  #point-no-epoch p{ font-size:12.5px; color:var(--text-mid); max-width:280px; line-height:1.7; }
+
+  #point-bottombar{ position:absolute; bottom:14px; right:18px; z-index:6; display:flex; gap:8px; }
+
+  /* 比較模式：左右滑桿比對（同一點位兩個年期）*/
+  #split-toggle-row{
+    display:flex; align-items:center; gap:8px; padding:10px 20px; background:var(--bg-panel);
+    border-bottom:1px solid var(--line-soft); font-size:11.5px; color:var(--text-mid);
+  }
+  #split-toggle-row select{
+    font-family:var(--mono); font-size:11px; background:var(--bg-deep); border:1px solid var(--line);
+    color:var(--text-hi); border-radius:5px; padding:4px 8px;
+  }
+  .switch{
+    width:34px; height:18px; border-radius:10px; background:var(--line); position:relative; cursor:pointer; flex-shrink:0;
+  }
+  .switch.on{ background:var(--accent); }
+  .switch::after{
+    content:''; position:absolute; width:14px; height:14px; border-radius:50%; background:#fff; top:2px; left:2px;
+    transition:left .15s;
+  }
+  .switch.on::after{ left:18px; }
+
+  #calibrate-banner{
+    display:none; align-items:center; gap:14px; padding:9px 20px;
+    background:rgba(95,168,132,0.12); border-bottom:1px solid #2f5c47; color:var(--ok);
+    font-family:var(--mono); font-size:11px; line-height:1.5;
+  }
+  #calibrate-banner.show{ display:flex; }
+  #calibrate-banner button{
+    font-family:var(--sans); font-size:11px; font-weight:700; background:var(--ok); color:#0c1a12;
+    border:none; border-radius:6px; padding:6px 14px; cursor:pointer; flex-shrink:0; white-space:nowrap;
+  }
+  #point-stage.calibrating #point-canvas-b{ cursor:move; outline:2px dashed var(--ok); outline-offset:-2px; }
+  #point-stage.calibrating #point-canvas{ pointer-events:none; }
+  .calib-badge{
+    position:absolute; bottom:14px; left:50%; transform:translateX(-50%); z-index:9;
+    font-family:var(--mono); font-size:10.5px; color:var(--ok); background:rgba(20,22,25,0.85);
+    border:1px solid #2f5c47; padding:5px 12px; border-radius:6px; display:none;
+  }
+  .calib-badge.show{ display:block; }
+
+  #split-line{
+    position:absolute; top:0; bottom:0; width:2px; background:var(--accent); z-index:8; pointer-events:none;
+    box-shadow:0 0 8px var(--accent-glow);
+    display:none;
+  }
+  #split-line.show{ display:block; }
+  #split-handle{
+    position:absolute; top:50%; left:50%; transform:translate(-50%,-50%); width:34px; height:34px; border-radius:50%;
+    background:var(--accent); display:flex; align-items:center; justify-content:center; pointer-events:auto; cursor:ew-resize;
+    box-shadow:0 2px 10px rgba(0,0,0,0.4);
+  }
+  #split-handle svg{ width:16px; height:16px; color:#1a1208; }
+  .epoch-badge{
+    position:absolute; top:14px; z-index:7; font-family:var(--mono); font-size:10.5px; font-weight:700;
+    background:rgba(20,22,25,0.85); border:1px solid var(--line); padding:4px 10px; border-radius:6px;
+    backdrop-filter:blur(4px); display:none;
+  }
+  .epoch-badge.show{ display:block; }
+  #epoch-badge-left{ left:14px; }
+  #epoch-badge-right{ right:14px; }
+
+  /* ===== 地圖來源切換（自訂底圖 / 地理地圖） ===== */
+  #map-source-switch{
+    display:flex; background:var(--bg-deep); border:1px solid var(--line); border-radius:7px; padding:2px; gap:2px;
+  }
+  .map-src-btn{
+    font-family:var(--mono); font-size:10.5px; font-weight:700; padding:6px 10px; border-radius:5px; cursor:pointer;
+    color:var(--text-mid); white-space:nowrap;
+  }
+  .map-src-btn.active{ background:var(--accent); color:#1a1208; }
+  .map-src-btn:not(.active):hover{ color:var(--text-hi); }
+
+  #geo-map-wrap{ flex:1; position:relative; display:none; }
+  #geo-map-wrap.show{ display:block; }
+  #map-canvas-wrap.show{ display:block; }
+  #map-canvas-wrap{ display:none; }
+  #map-canvas-wrap.custom-active{ display:block; }
+
+  #geo-map{ position:absolute; inset:0; background:#1a1d21; }
+  .leaflet-container{ background:#1a1d21 !important; font-family:var(--sans) !important; }
+  .leaflet-control-attribution{
+    background:rgba(20,22,25,0.75) !important; color:var(--text-low) !important; font-size:9.5px !important;
+  }
+  .leaflet-control-attribution a{ color:var(--text-mid) !important; }
+  .leaflet-bar a{
+    background:var(--bg-panel) !important; color:var(--text-hi) !important; border-color:var(--line) !important;
+  }
+  .leaflet-bar a:hover{ background:var(--bg-panel-raised) !important; }
+
+  #geo-layer-switch{
+    position:absolute; top:14px; right:14px; z-index:500;
+    display:flex; flex-direction:column; background:rgba(29,33,38,0.92); border:1px solid var(--line);
+    border-radius:8px; padding:3px; backdrop-filter:blur(6px); gap:2px;
+  }
+  .layer-btn{
+    font-family:var(--mono); font-size:10.5px; font-weight:700; padding:7px 12px; border-radius:5px; cursor:pointer;
+    color:var(--text-mid); text-align:left; white-space:nowrap;
+  }
+  .layer-btn.active{ background:var(--accent); color:#1a1208; }
+  .layer-btn:not(.active):hover{ color:var(--text-hi); }
+
+  #geo-placing-banner{
+    position:absolute; top:14px; left:14px; z-index:500;
+    background:rgba(232,116,59,0.14); border:1px solid var(--accent-dim); color:var(--accent);
+    font-family:var(--mono); font-size:11px; padding:7px 14px; border-radius:7px;
+    display:none; align-items:center; gap:10px; backdrop-filter:blur(6px);
+  }
+  #geo-placing-banner.show{ display:flex; }
+  #geo-placing-banner button{
+    font-family:var(--sans); font-size:10.5px; font-weight:600; background:transparent; color:var(--accent);
+    border:1px solid var(--accent-dim); border-radius:5px; padding:2px 8px; cursor:pointer;
+  }
+
+  .geo-pin-icon{ display:flex; align-items:center; justify-content:center; }
+  .geo-pin-icon svg{ filter:drop-shadow(0 2px 4px rgba(0,0,0,0.5)); }
+
+  .coord-readout{
+    position:absolute; bottom:14px; left:14px; z-index:500;
+    font-family:var(--mono); font-size:10.5px; color:var(--text-mid);
+    background:rgba(29,33,38,0.85); border:1px solid var(--line); padding:6px 10px; border-radius:6px;
+    backdrop-filter:blur(6px); pointer-events:none;
+  }
+
+  .modal-overlay{
+    position:fixed; inset:0; background:rgba(8,9,10,0.88); backdrop-filter:blur(8px); -webkit-backdrop-filter:blur(8px);
+    display:flex; align-items:center; justify-content:center; z-index:1000; opacity:0; pointer-events:none;
+    transition:opacity .18s;
+  }
+  .modal-overlay.show{ opacity:1; pointer-events:auto; }
+  .modal{
+    width:380px; max-width:90vw; background:var(--bg-panel); border:1px solid var(--line);
+    border-radius:12px; padding:22px; box-shadow:0 20px 60px rgba(0,0,0,0.6);
+    max-height:86vh; overflow-y:auto;
+  }
+  .modal-title{ font-size:15px; font-weight:700; margin-bottom:4px; }
+  .modal-sub{ font-size:12px; color:var(--text-mid); margin-bottom:18px; line-height:1.6;}
+  .field-label{ font-family:var(--mono); font-size:10.5px; letter-spacing:.05em; color:var(--text-mid); text-transform:uppercase; margin-bottom:6px; display:block;}
+  .field-input{
+    width:100%; background:var(--bg-deep); border:1px solid var(--line); border-radius:7px;
+    padding:9px 11px; color:var(--text-hi); font-size:13px; font-family:var(--sans); margin-bottom:16px;
+  }
+  .field-input:focus{ outline:none; border-color:var(--accent); }
+  .field-row{ display:flex; gap:10px; }
+  .field-row > div{ flex:1; }
+  .upload-zone{
+    border:1.5px dashed var(--line); border-radius:9px; padding:22px 14px; text-align:center;
+    cursor:pointer; margin-bottom:16px; transition:border-color .15s, background .15s;
+  }
+  .upload-zone:hover, .upload-zone.dragover{ border-color:var(--accent); background:rgba(232,116,59,0.05); }
+  .upload-zone svg{ width:26px; height:26px; color:var(--text-low); margin-bottom:8px; }
+  .upload-zone-text{ font-size:12.5px; color:var(--text-mid); }
+  .upload-zone-sub{ font-family:var(--mono); font-size:10px; color:var(--text-low); margin-top:4px; }
+  .upload-preview{ width:100%; height:90px; border-radius:7px; background-size:cover; background-position:center; margin-bottom:16px; border:1px solid var(--line); display:none;}
+  .modal-actions{ display:flex; gap:8px; justify-content:flex-end; }
+  select.field-input{ appearance:none; cursor:pointer; }
+  .target-list{ max-height:200px; overflow-y:auto; margin-bottom:16px; border:1px solid var(--line-soft); border-radius:8px;}
+  .target-item{ display:flex; align-items:center; gap:9px; padding:9px 10px; cursor:pointer; border-bottom:1px solid var(--line-soft); }
+  .target-item:last-child{ border-bottom:none; }
+  .target-item:hover{ background:var(--bg-panel-raised); }
+  .target-item.selected{ background:rgba(232,116,59,0.1); }
+  .target-thumb{ width:38px; height:24px; border-radius:3px; background:var(--bg-deep) center/cover; flex-shrink:0; border:1px solid var(--line-soft);}
+  .target-name{ font-size:12.5px; color:var(--text-hi); }
+  #file-input, #file-input-map, #file-input-epoch{ display:none; }
+
+  #toast{
+    position:fixed; bottom:24px; left:50%; transform:translateX(-50%) translateY(20px);
+    background:var(--bg-panel-raised); border:1px solid var(--line); color:var(--text-hi);
+    padding:10px 18px; border-radius:8px; font-size:12.5px; z-index:200;
+    opacity:0; pointer-events:none; transition:opacity .2s, transform .2s;
+    display:flex; align-items:center; gap:8px;
+  }
+  #toast.show{ opacity:1; transform:translateX(-50%) translateY(0); }
+  #toast svg{ width:14px; height:14px; color:var(--ok); flex-shrink:0;}
+
+  @media (max-width:860px){
+    #compare-view.show{ flex-direction:column; }
+    #map-panel{ width:100%; height:42%; min-width:0; border-right:none; border-bottom:1px solid var(--line); }
+    #point-panel{ height:58%; }
+    #mode-switch{ top:12px; }
+    #map-header, #point-header{ padding-top:14px; }
+  }
+  @media (max-width:720px){
+    #sidebar{ position:absolute; left:0; top:0; height:100%; }
+    #sidebar:not(.collapsed){ box-shadow:8px 0 24px rgba(0,0,0,0.4); }
+    .sb-footer{ display:none; }
+    #topbar{ padding:16px 14px 14px 60px; }
+    .stage-title{ font-size:15px; }
+  }
+
+  /* ===== 熱點刪除按鈕 ===== */
+  .hotspot-del-btn{
+    position:absolute; top:-6px; right:-6px; width:16px; height:16px; border-radius:50%;
+    background:rgba(217,106,90,0.9); color:#fff; font-size:11px; line-height:1;
+    cursor:pointer; display:none; z-index:5; font-weight:700;
+    box-shadow:0 1px 4px rgba(0,0,0,0.5); border:1.5px solid #1a1208;
+    align-items:center; justify-content:center;
+  }
+  .hotspot:hover .hotspot-del-btn{ display:flex; }
+  .hotspot-del-btn:hover{ background:rgba(217,106,90,1); }
+
+  /* ===== 場景編輯按鈕 ===== */
+  .scene-edit{
+    width:20px; height:20px; flex-shrink:0; border-radius:4px;
+    display:flex; align-items:center; justify-content:center;
+    color:var(--text-low); opacity:0; cursor:pointer; margin-right:2px;
+  }
+  .scene-card:hover .scene-edit{ opacity:1; }
+  .scene-edit:hover{ color:var(--accent); background:rgba(232,116,59,0.12); }
+
+  /* ===== 時期刪除按鈕 ===== */
+  .epoch-del-btn{
+    margin-left:5px; width:14px; height:14px; border-radius:3px;
+    display:inline-flex; align-items:center; justify-content:center;
+    font-size:10px; color:var(--text-low); cursor:pointer; opacity:0; flex-shrink:0;
+  }
+  .epoch-tab:hover .epoch-del-btn{ opacity:0.6; }
+  .epoch-del-btn:hover{ color:#d96a5a; opacity:1; background:rgba(217,106,90,0.12); }
+
+  /* ===== 載入遮罩 ===== */
+  #loading-overlay{
+    position:fixed; inset:0; background:rgba(12,14,16,0.88);
+    z-index:900; display:flex; flex-direction:column;
+    align-items:center; justify-content:center; gap:16px;
+    backdrop-filter:blur(6px);
+  }
+  #loading-overlay.hidden{ display:none; }
+  .loading-spinner{
+    width:36px; height:36px; border:2.5px solid var(--line);
+    border-top-color:var(--accent); border-radius:50%;
+    animation:spin 0.75s linear infinite;
+  }
+  @keyframes spin{ to{ transform:rotate(360deg); } }
+  .loading-label{ font-family:var(--mono); font-size:11.5px; color:var(--text-mid); }
+  #ai-provider-badge{
+    position:fixed; top:18px; left:50%; transform:translateX(-50%);
+    margin-top:42px; z-index:199; pointer-events:none;
+    font-family:var(--mono); font-size:9.5px; font-weight:700; letter-spacing:.04em;
+    padding:3px 10px; border-radius:5px; white-space:nowrap; display:none;
+    background:rgba(29,33,38,0.88); border:1px solid var(--line); backdrop-filter:blur(4px);
+  }
+  #ai-provider-badge.p-gemini{ color:#4a90c2; border-color:rgba(74,144,194,0.4); }
+  #ai-provider-badge.p-groq  { color:var(--ok); border-color:rgba(95,168,132,0.4); }
+  #ai-provider-badge.p-claude{ color:var(--accent); border-color:var(--accent-dim); }
+  #ai-provider-badge.p-custom{ color:var(--text-mid); }
+
+  /* ===== AI 分析 ===== */
+  #btn-compare-ai{ }
+  .ai-modal .modal{ width:460px; }
+  .ai-result-summary{
+    font-size:13.5px; line-height:1.6; color:var(--text-hi); margin-bottom:14px;
+    padding:11px 13px; background:rgba(232,116,59,0.08); border:1px solid var(--accent-dim);
+    border-radius:8px;
+  }
+  .ai-badge{
+    display:inline-block; font-family:var(--mono); font-size:11px; font-weight:700;
+    padding:3px 9px; border-radius:5px; margin-bottom:12px;
+  }
+  .ai-badge.good{ background:rgba(95,168,132,0.15); color:var(--ok); border:1px solid #2f5c47; }
+  .ai-badge.mild{ background:rgba(232,116,59,0.12); color:var(--accent); border:1px solid var(--accent-dim); }
+  .ai-badge.severe{ background:rgba(217,106,90,0.15); color:#d96a5a; border:1px solid #6b3329; }
+  .ai-obs{ list-style:none; padding:0; margin:0 0 14px; }
+  .ai-obs li{
+    display:flex; gap:9px; align-items:flex-start; padding:9px 0; border-bottom:1px solid var(--line-soft);
+    font-size:12.5px; line-height:1.5;
+  }
+  .ai-obs li:last-child{ border-bottom:none; }
+  .ai-sev{
+    flex-shrink:0; font-family:var(--mono); font-size:9.5px; font-weight:700; padding:2px 7px;
+    border-radius:4px; margin-top:1px; white-space:nowrap;
+  }
+  .ai-sev.s-資訊{ background:rgba(154,160,168,0.15); color:var(--text-mid); }
+  .ai-sev.s-注意{ background:rgba(74,144,194,0.15); color:var(--map-pin); }
+  .ai-sev.s-警告{ background:rgba(232,116,59,0.15); color:var(--accent); }
+  .ai-sev.s-嚴重{ background:rgba(217,106,90,0.18); color:#d96a5a; }
+  .ai-obs .ai-obs-body{ flex:1; }
+  .ai-obs .ai-obs-loc{ font-family:var(--mono); font-size:10px; color:var(--text-low); margin-top:2px; }
+  .ai-report-label{
+    font-family:var(--mono); font-size:10px; letter-spacing:.06em; color:var(--text-mid);
+    text-transform:uppercase; margin-bottom:6px;
+  }
+  .ai-report{
+    font-size:12.5px; line-height:1.7; color:var(--text-mid); white-space:pre-wrap;
+    background:var(--bg-deep); border:1px solid var(--line-soft); border-radius:8px; padding:11px 13px;
+    max-height:160px; overflow-y:auto;
+  }
+  .ai-copy-btn{ margin-top:8px; }
+  .ai-error{ color:#d96a5a; font-size:12.5px; line-height:1.6; }
+</style>
+</head>
+<body>
+<div id="app">
+
+  <!-- ===== 模式切換 ===== -->
+  <div id="ai-provider-badge"></div>
+  <div id="mode-switch">
+    <div class="mode-btn active" id="mode-tour" data-mode="tour">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M2 12h20M12 2a15 15 0 010 20M12 2a15 15 0 000 20"/></svg>
+      環景導覽
+    </div>
+    <div class="mode-btn" id="mode-compare" data-mode="compare">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 12h18M3 6h18M3 18h18" stroke-opacity="0"/><path d="M9 3v18M3 7h6M3 17h6M15 3v18M15 7h6M15 17h6"/></svg>
+      地圖時期比對
+    </div>
+  </div>
+
+  <!-- ===== 資料管理工具列 ===== -->
+  <div id="data-toolbar">
+    <div id="save-status">
+      <span class="save-dot" id="save-dot"></span>
+      <span id="save-status-text">已同步</span>
+    </div>
+    <div class="data-menu-wrap">
+      <button class="icon-btn" id="btn-data-menu" title="資料管理">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="1"/><circle cx="12" cy="5" r="1"/><circle cx="12" cy="19" r="1"/></svg>
+      </button>
+      <div id="data-menu">
+        <div class="data-menu-item" id="btn-export-backup">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4M7 10l5 5 5-5M12 15V3"/></svg>
+          <div><div class="dm-ttl">匯出備份</div><div class="dm-sub">下載完整資料 JSON 檔</div></div>
+        </div>
+        <div class="data-menu-item" id="btn-import-backup">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4M17 8l-5-5-5 5M12 3v12"/></svg>
+          <div><div class="dm-ttl">匯入備份</div><div class="dm-sub">從 JSON 檔還原資料</div></div>
+        </div>
+        <div class="data-menu-divider"></div>
+        <div class="data-menu-item" id="btn-export-share">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M18 8a3 3 0 100-6 3 3 0 000 6zM6 15a3 3 0 100-6 3 3 0 000 6zM18 22a3 3 0 100-6 3 3 0 000 6zM8.59 13.51l6.83 3.98M15.41 6.51L8.59 10.49"/></svg>
+          <div><div class="dm-ttl">匯出分享版網頁</div><div class="dm-sub">產生唯讀 HTML，可上傳分享</div></div>
+        </div>
+        <div class="data-menu-divider"></div>
+        <div class="data-menu-item danger" id="btn-clear-all">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M3 6h18M8 6V4a2 2 0 012-2h4a2 2 0 012 2v2m3 0l-1 14a2 2 0 01-2 2H7a2 2 0 01-2-2L4 6"/></svg>
+          <div><div class="dm-ttl">清空所有資料</div><div class="dm-sub">重置整個系統</div></div>
+        </div>
+      </div>
+    </div>
+  </div>
+  <input type="file" id="file-input-import" accept="application/json" style="display:none;">
+
+  <!-- ===== 導覽模式：左側場景清冊 ===== -->
+  <aside id="sidebar">
+    <div class="sb-header">
+      <p class="sb-eyebrow">SITE PANORAMA SYSTEM</p>
+      <h1 class="sb-title">現勘環景導覽</h1>
+      <p class="sb-sub" id="scene-count">00 個場景</p>
+    </div>
+    <div class="sb-actions">
+      <button class="btn btn-primary" id="btn-add-scene">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>
+        新增場景
+      </button>
+    </div>
+    <div id="scene-list"></div>
+    <div class="sb-footer">EQUIRECTANGULAR · 2:1 · DRAG TO PAN</div>
+  </aside>
+
+  <button id="sidebar-toggle" title="收合／展開場景清冊">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12h18M3 6h18M3 18h18"/></svg>
+  </button>
+
+  <!-- ===== 導覽模式：主舞台 ===== -->
+  <main id="stage-wrap">
+    <div id="stage">
+      <canvas id="pano-canvas"></canvas>
+
+      <div id="topbar">
+        <div class="stage-title-wrap">
+          <p class="stage-eyebrow" id="scene-eyebrow">--</p>
+          <h2 class="stage-title" id="scene-title">尚未載入場景</h2>
+          <p class="stage-coords" id="scene-coords">LAT -- / LON --</p>
+        </div>
+        <div class="top-tools">
+          <div class="icon-btn" id="btn-hotspot-mode" title="新增跳轉熱點">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M12 2v4M12 18v4M2 12h4M18 12h4"/></svg>
+          </div>
+          <div class="icon-btn" id="btn-ai-analyze" title="AI 分析當前視角（損壞／異常辨識）">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2a4 4 0 0 1 4 4 4 4 0 0 1 .9 7.9A4 4 0 0 1 12 22a4 4 0 0 1-4.9-8.1A4 4 0 0 1 8 6a4 4 0 0 1 4-4z"/><path d="M12 6v12M8 10h8M8 14h8"/></svg>
+          </div>
+          <div class="icon-btn" id="btn-auto-rotate" title="自動旋轉（R）">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="5 3 19 12 5 21 5 3"/></svg>
+          </div>
+          <div class="icon-btn" id="btn-fullscreen" title="全螢幕（F）">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M8 3H5a2 2 0 0 0-2 2v3M16 3h3a2 2 0 0 1 2 2v3M21 16v3a2 2 0 0 1-2 2h-3M8 21H5a2 2 0 0 1-2-2v-3"/></svg>
+          </div>
+        </div>
+      </div>
+
+      <div id="hotspot-banner">
+        <span>點擊畫面任一點以放置熱點</span>
+        <button id="btn-cancel-hotspot">取消</button>
+      </div>
+
+      <div id="bottombar">
+        <div class="zoom-group">
+          <div class="zoom-btn" id="btn-zoom-out">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3M8 11h6"/></svg>
+          </div>
+          <div class="zoom-divider"></div>
+          <div class="fov-readout" id="fov-readout">90°</div>
+          <div class="zoom-divider"></div>
+          <div class="zoom-btn" id="btn-zoom-in">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3M11 8v6M8 11h6"/></svg>
+          </div>
+        </div>
+      </div>
+
+      <div id="empty-stage">
+        <div class="empty-icon">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M2 12h20M12 2a15 15 0 010 20M12 2a15 15 0 000 20"/></svg>
+        </div>
+        <p class="empty-title">尚未建立任何場景</p>
+        <p class="empty-sub">上傳第一張等距矩形全景圖（建議解析度 4096×2048 以上），即可開始建立現勘導覽動線。點選左側 <code>新增場景</code> 開始。</p>
+      </div>
+    </div>
+
+    <!-- ===== 比對模式 ===== -->
+    <div id="compare-view">
+      <!-- 左：自訂底圖 + 判點 -->
+      <div id="map-panel">
+        <div id="map-header">
+          <div>
+            <p class="ttl">監測點位地圖</p>
+            <p class="sub" id="map-sub">尚未設定底圖</p>
+          </div>
+          <div id="map-header-actions">
+            <div id="map-source-switch">
+              <div class="map-src-btn active" data-src="custom">自訂底圖</div>
+              <div class="map-src-btn" data-src="geo">地理地圖</div>
+            </div>
+            <button class="btn btn-sm" id="btn-set-basemap">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4M17 8l-5-5-5 5M12 3v12"/></svg>
+              底圖
+            </button>
+            <button class="btn btn-sm btn-primary" id="btn-place-point" style="flex:none;">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>
+              新增點位
+            </button>
+          </div>
+        </div>
+        <div id="map-canvas-wrap" class="custom-active">
+          <div id="map-content"></div>
+          <div id="map-no-base">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><path d="M21 15l-5-5L5 21"/></svg>
+            <p>請先設定底圖（工地平面圖、集水區圖等），再於圖上標記監測點位。</p>
+          </div>
+          <div id="map-placing-banner">
+            <span>點擊底圖以放置點位</span>
+            <button id="btn-cancel-place">取消</button>
+          </div>
+          <div id="map-zoom">
+            <div class="zoom-btn" id="map-zoom-in">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3M11 8v6M8 11h6"/></svg>
+            </div>
+            <div class="zoom-btn" id="map-zoom-out">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3M8 11h6"/></svg>
+            </div>
+            <div class="zoom-btn" id="map-zoom-reset" title="重置視角">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 109-9 9.75 9.75 0 00-6.74 2.74L3 8"/><path d="M3 3v5h5"/></svg>
+            </div>
+          </div>
+        </div>
+
+        <div id="geo-map-wrap">
+          <div id="geo-map"></div>
+          <div id="geo-layer-switch">
+            <div class="layer-btn active" data-layer="street">街道圖</div>
+            <div class="layer-btn" data-layer="satellite">衛星影像</div>
+          </div>
+          <div id="geo-placing-banner">
+            <span>點擊地圖以放置點位</span>
+            <button id="btn-cancel-geo-place">取消</button>
+          </div>
+          <div class="coord-readout" id="geo-coord-readout">--, --</div>
+        </div>
+      </div>
+
+      <!-- 右：點位多時期全景 -->
+      <div id="point-panel">
+        <div id="point-empty">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M21 10c0 7-9 12-9 12S3 17 3 10a9 9 0 0118 0z"/><circle cx="12" cy="10" r="3"/></svg>
+          <p>在左側地圖點選一個監測點位，即可在此瀏覽該位置的多時期全景影像並進行比對。</p>
+        </div>
+        <div id="point-active">
+          <div id="point-header">
+            <div class="ttl-row">
+              <div>
+                <p class="ttl" id="point-title">點位名稱</p>
+                <p class="sub" id="point-sub">0 個時期</p>
+              </div>
+              <div style="display:flex; gap:6px;">
+                <button class="btn btn-sm btn-ghost" id="btn-edit-point" title="編輯點位名稱／座標">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
+                </button>
+                <button class="btn btn-sm btn-ghost" id="btn-delete-point" title="刪除此點位">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M3 6h18M8 6V4a2 2 0 012-2h4a2 2 0 012 2v2m3 0l-1 14a2 2 0 01-2 2H7a2 2 0 01-2-2L4 6"/></svg>
+                </button>
+                <button class="btn btn-sm" id="btn-add-epoch">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>
+                  新增時期
+                </button>
+              </div>
+            </div>
+            <div id="epoch-tabs"></div>
+          </div>
+
+          <div id="split-toggle-row">
+            <div class="switch" id="split-switch"></div>
+            <span>左右滑桿比對兩個時期</span>
+            <select id="split-select-b" style="margin-left:auto; display:none;"></select>
+            <button class="btn btn-sm" id="btn-calibrate" style="display:none;" title="校準兩時期方位，讓畫面對齊同一地標">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M3 12a9 9 0 0115-6.7M21 12a9 9 0 01-15 6.7"/><path d="M21 3v6h-6M3 21v-6h6"/></svg>
+              校準方位
+            </button>
+            <button class="btn btn-sm" id="btn-compare-ai" style="display:none;" title="AI 比對兩個時期的變化">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v18M5 8l-3 4 3 4M19 8l3 4-3 4"/></svg>
+              AI 比對
+            </button>
+          </div>
+          <div id="calibrate-banner">
+            <span>拖曳右側畫面，將兩個時期對齊到同一個地標（例如同一根電線桿或田埂交界），完成後按「完成校準」</span>
+            <button id="btn-finish-calibrate">完成校準</button>
+          </div>
+
+          <div id="point-stage">
+            <canvas id="point-canvas"></canvas>
+            <canvas id="point-canvas-b" style="position:absolute; inset:0; display:none;"></canvas>
+            <div class="epoch-badge" id="epoch-badge-left"></div>
+            <div class="epoch-badge" id="epoch-badge-right"></div>
+            <div id="split-line"><div id="split-handle"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><path d="M8 5l-5 7 5 7M16 5l5 7-5 7"/></svg></div></div>
+            <div class="calib-badge" id="calib-badge">偏移量 0°</div>
+            <div id="point-no-epoch">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><path d="M21 15l-5-5L5 21"/></svg>
+              <p>此點位尚無全景影像，點選上方「新增時期」開始建立。</p>
+            </div>
+            <div id="point-bottombar">
+              <div class="zoom-group">
+                <div class="zoom-btn" id="pt-zoom-out">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3M8 11h6"/></svg>
+                </div>
+                <div class="zoom-divider"></div>
+                <div class="fov-readout" id="pt-fov-readout">90°</div>
+                <div class="zoom-divider"></div>
+                <div class="zoom-btn" id="pt-zoom-in">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3M11 8v6M8 11h6"/></svg>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </main>
+</div>
+
+<!-- ===== 新增場景 Modal（導覽模式）===== -->
+<div class="modal-overlay" id="modal-add-scene">
+  <div class="modal">
+    <p class="modal-title">新增全景場景</p>
+    <p class="modal-sub">支援等距矩形全景圖（Equirectangular, 2:1），格式 JPG / PNG。</p>
+    <div class="upload-zone" id="upload-zone">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4M17 8l-5-5-5 5M12 3v12"/></svg>
+      <p class="upload-zone-text">點擊或拖曳全景圖至此</p>
+      <p class="upload-zone-sub">JPG / PNG · 建議比例 2:1</p>
+    </div>
+    <input type="file" id="file-input" accept="image/*">
+    <div class="upload-preview" id="upload-preview"></div>
+    <label class="field-label">場景名稱</label>
+    <input class="field-input" id="input-scene-name" placeholder="例：固床工上游 ST.0+120">
+    <label class="field-label">場域備註（選填）</label>
+    <input class="field-input" id="input-scene-note" placeholder="例：114年度竣工後現勘 / 無人機正射拍攝">
+    <div class="modal-actions">
+      <button class="btn btn-ghost" id="btn-cancel-add">取消</button>
+      <button class="btn btn-primary" id="btn-confirm-add" style="flex:none; padding:8px 18px;">加入場景</button>
+    </div>
+  </div>
+</div>
+
+<!-- ===== 編輯場景 Modal ===== -->
+<div class="modal-overlay" id="modal-edit-scene">
+  <div class="modal">
+    <p class="modal-title">編輯場景</p>
+    <p class="modal-sub">修改此場景的名稱與備註。</p>
+    <label class="field-label">場景名稱</label>
+    <input class="field-input" id="input-edit-scene-name" placeholder="例：固床工上游 ST.0+120">
+    <label class="field-label">場域備註（選填）</label>
+    <input class="field-input" id="input-edit-scene-note" placeholder="例：114年度竣工後現勘">
+    <div class="modal-actions">
+      <button class="btn btn-ghost" id="btn-cancel-edit-scene">取消</button>
+      <button class="btn btn-primary" id="btn-confirm-edit-scene" style="flex:none; padding:8px 18px;">儲存變更</button>
+    </div>
+  </div>
+</div>
+
+<!-- ===== 熱點 Modal（導覽模式）===== -->
+<div class="modal-overlay" id="modal-hotspot">
+  <div class="modal">
+    <p class="modal-title">設定跳轉熱點</p>
+    <p class="modal-sub">選擇此熱點要連結到的場景，使用者點擊後將跳轉過去。</p>
+    <label class="field-label">跳轉至場景</label>
+    <div class="target-list" id="target-list"></div>
+    <label class="field-label">熱點標籤（選填）</label>
+    <input class="field-input" id="input-hotspot-label" placeholder="例：前往下游觀測點">
+    <div class="modal-actions">
+      <button class="btn btn-ghost" id="btn-cancel-hotspot-modal">取消</button>
+      <button class="btn btn-primary" id="btn-confirm-hotspot" style="flex:none; padding:8px 18px;">建立熱點</button>
+    </div>
+  </div>
+</div>
+
+<!-- ===== 設定底圖 Modal ===== -->
+<div class="modal-overlay" id="modal-basemap">
+  <div class="modal">
+    <p class="modal-title">設定底圖</p>
+    <p class="modal-sub">上傳工地平面圖、集水區圖、地形圖等作為底圖，之後可在圖上標記監測點位。</p>
+    <div class="upload-zone" id="upload-zone-map">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4M17 8l-5-5-5 5M12 3v12"/></svg>
+      <p class="upload-zone-text">點擊或拖曳底圖圖片至此</p>
+      <p class="upload-zone-sub">JPG / PNG</p>
+    </div>
+    <input type="file" id="file-input-map" accept="image/*">
+    <div class="upload-preview" id="upload-preview-map"></div>
+    <label class="field-label">底圖名稱（選填）</label>
+    <input class="field-input" id="input-map-name" placeholder="例：必坦溪集水區治理範圍圖">
+    <div class="modal-actions">
+      <button class="btn btn-ghost" id="btn-cancel-map">取消</button>
+      <button class="btn btn-primary" id="btn-confirm-map" style="flex:none; padding:8px 18px;">設定底圖</button>
+    </div>
+  </div>
+</div>
+
+<!-- ===== 新增點位 Modal ===== -->
+<div class="modal-overlay" id="modal-point">
+  <div class="modal">
+    <p class="modal-title">命名監測點位</p>
+    <p class="modal-sub">為剛才標記的位置命名，並可一併上傳第一個時期的全景影像（之後仍可在此點位下繼續加入更多時期）。</p>
+    <label class="field-label">點位名稱</label>
+    <input class="field-input" id="input-point-name" placeholder="例：固床工 P3 觀測樁">
+    <div class="field-row" id="point-coord-row" style="display:none;">
+      <div>
+        <label class="field-label">緯度 Lat</label>
+        <input class="field-input" id="input-point-lat" placeholder="例：24.1477" inputmode="decimal">
+      </div>
+      <div>
+        <label class="field-label">經度 Lon</label>
+        <input class="field-input" id="input-point-lon" placeholder="例：120.6736" inputmode="decimal">
+      </div>
+    </div>
+    <label class="field-label">點位備註（選填）</label>
+    <input class="field-input" id="input-point-note" placeholder="例：左岸護坡 / 樁號 1+250">
+
+    <label class="field-label">第一個時期全景圖（選填，可之後再補）</label>
+    <div class="upload-zone" id="upload-zone-point-epoch">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4M17 8l-5-5-5 5M12 3v12"/></svg>
+      <p class="upload-zone-text">點擊或拖曳全景圖至此</p>
+      <p class="upload-zone-sub">JPG / PNG · 建議比例 2:1</p>
+    </div>
+    <input type="file" id="file-input-point-epoch" accept="image/*">
+    <div class="upload-preview" id="upload-preview-point-epoch"></div>
+
+    <div class="field-row" id="point-epoch-date-row" style="display:none;">
+      <div>
+        <label class="field-label">年份</label>
+        <input class="field-input" id="input-point-epoch-year" placeholder="例：2025" inputmode="numeric">
+      </div>
+      <div>
+        <label class="field-label">月份（選填）</label>
+        <input class="field-input" id="input-point-epoch-month" placeholder="例：06" inputmode="numeric">
+      </div>
+    </div>
+
+    <div class="modal-actions">
+      <button class="btn btn-ghost" id="btn-cancel-point">取消</button>
+      <button class="btn btn-primary" id="btn-confirm-point" style="flex:none; padding:8px 18px;">建立點位</button>
+    </div>
+  </div>
+</div>
+
+<!-- ===== 編輯點位 Modal ===== -->
+<div class="modal-overlay" id="modal-edit-point">
+  <div class="modal">
+    <p class="modal-title">編輯點位</p>
+    <p class="modal-sub">修改點位名稱、備註或座標。此點位下的時期全景不會受影響。</p>
+    <label class="field-label">點位名稱</label>
+    <input class="field-input" id="input-edit-point-name" placeholder="例：固床工 P3 觀測樁">
+    <div class="field-row" id="edit-point-coord-row" style="display:none;">
+      <div>
+        <label class="field-label">緯度 Lat</label>
+        <input class="field-input" id="input-edit-point-lat" inputmode="decimal">
+      </div>
+      <div>
+        <label class="field-label">經度 Lon</label>
+        <input class="field-input" id="input-edit-point-lon" inputmode="decimal">
+      </div>
+    </div>
+    <label class="field-label">點位備註（選填）</label>
+    <input class="field-input" id="input-edit-point-note" placeholder="例：左岸護坡 / 樁號 1+250">
+    <div class="modal-actions">
+      <button class="btn btn-ghost" id="btn-cancel-edit-point">取消</button>
+      <button class="btn btn-primary" id="btn-confirm-edit-point" style="flex:none; padding:8px 18px;">儲存變更</button>
+    </div>
+  </div>
+</div>
+
+<!-- ===== 新增時期全景 Modal ===== -->
+<div class="modal-overlay" id="modal-epoch">
+  <div class="modal">
+    <p class="modal-title">新增時期全景</p>
+    <p class="modal-sub">為此點位加入一個時期的全景影像，用於跨年度比對。</p>
+    <div class="upload-zone" id="upload-zone-epoch">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4M17 8l-5-5-5 5M12 3v12"/></svg>
+      <p class="upload-zone-text">點擊或拖曳全景圖至此</p>
+      <p class="upload-zone-sub">JPG / PNG · 建議比例 2:1</p>
+    </div>
+    <input type="file" id="file-input-epoch" accept="image/*">
+    <div class="upload-preview" id="upload-preview-epoch"></div>
+    <div class="field-row">
+      <div>
+        <label class="field-label">年份</label>
+        <input class="field-input" id="input-epoch-year" placeholder="例：2025" inputmode="numeric">
+      </div>
+      <div>
+        <label class="field-label">月份（選填）</label>
+        <input class="field-input" id="input-epoch-month" placeholder="例：06" inputmode="numeric">
+      </div>
+    </div>
+    <label class="field-label">備註（選填）</label>
+    <input class="field-input" id="input-epoch-note" placeholder="例：蘇力颱風後現勘">
+    <div class="modal-actions">
+      <button class="btn btn-ghost" id="btn-cancel-epoch">取消</button>
+      <button class="btn btn-primary" id="btn-confirm-epoch" style="flex:none; padding:8px 18px;">加入時期</button>
+    </div>
+  </div>
+</div>
+
+<!-- ===== AI 分析結果 Modal ===== -->
+<div class="modal-overlay ai-modal" id="modal-ai">
+  <div class="modal">
+    <p class="modal-title" id="ai-modal-title">AI 分析結果</p>
+    <p class="modal-sub" id="ai-modal-sub">由 Claude 視覺模型分析當前畫面</p>
+    <div id="ai-modal-body">
+      <div style="display:flex; flex-direction:column; align-items:center; gap:14px; padding:30px 0;">
+        <div class="loading-spinner"></div>
+        <p class="loading-label" id="ai-loading-label">AI 判讀中，請稍候…</p>
+      </div>
+    </div>
+    <div class="modal-actions">
+      <button class="btn btn-ghost" id="btn-close-ai">關閉</button>
+    </div>
+  </div>
+</div>
+
+<div id="loading-overlay" class="hidden">
+  <div class="loading-spinner"></div>
+  <p class="loading-label">載入資料中，請稍候…</p>
+</div>
+
+<div id="toast">
+  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6L9 17l-5-5"/></svg>
+  <span id="toast-text">已儲存</span>
+</div>
+
+<script>
+(function(){
+  "use strict";
+
+  /* =========================================================
+     共用工具
+  ========================================================= */
+  function escapeHtml(s){ const d=document.createElement('div'); d.textContent=s||''; return d.innerHTML; }
+  let toastTimer=null;
+  function showToast(msg){
+    const t=document.getElementById('toast');
+    document.getElementById('toast-text').textContent=msg;
+    t.classList.add('show');
+    clearTimeout(toastTimer);
+    toastTimer=setTimeout(()=>t.classList.remove('show'),2200);
+  }
+  function readFileAsDataUrl(file, cb){
+    const reader=new FileReader();
+    reader.onload=e=>cb(e.target.result);
+    reader.readAsDataURL(file);
+  }
+
+  /* =========================================================
+     球面全景渲染引擎（可重用於多個 canvas）
+  ========================================================= */
+  function createPanoEngine(canvas){
+    const ctx = canvas.getContext('2d');
+    const state = { img:null, srcCanvas:null, srcData:null, yaw:0, pitch:0, fov:Math.PI/2 };
+    const FOV_MIN=0.35, FOV_MAX=1.55;
+
+    function resize(){
+      const wrap = canvas.parentElement;
+      canvas.width = wrap.clientWidth * devicePixelRatio;
+      canvas.height = wrap.clientHeight * devicePixelRatio;
+      canvas.style.width = wrap.clientWidth + 'px';
+      canvas.style.height = wrap.clientHeight + 'px';
+    }
+
+    function setImage(img){
+      state.img = img;
+      state.srcCanvas = null; state.srcData = null;
+      state.yaw = 0; state.pitch = 0; state.fov = Math.PI/2;
+    }
+
+    function clampPitch(p){ const lim=Math.PI/2-0.05; return Math.max(-lim, Math.min(lim,p)); }
+
+    function setFov(v){ state.fov = Math.max(FOV_MIN, Math.min(FOV_MAX, v)); }
+
+    let renderQueued=false;
+    function render(){
+      if(renderQueued) return;
+      renderQueued=true;
+      requestAnimationFrame(()=>{ renderQueued=false; doRender(); });
+    }
+
+    function doRender(){
+      if(!state.img){ ctx.clearRect(0,0,canvas.width,canvas.height); return; }
+      const img = state.img;
+      const w = canvas.width, h = canvas.height;
+      if(w===0||h===0) return;
+      if(!state.srcCanvas){
+        const sc = document.createElement('canvas');
+        // 來源解析度上限提高，並以裝置實際具備的記憶體彈性處理：
+        // equirect 寬度上限 6000px（4K~6K 空拍全景常見寬度），避免砍掉太多細節
+        const maxW = 6000;
+        const scale = Math.min(1, maxW/img.width);
+        sc.width = Math.round(img.width*scale);
+        sc.height = Math.round(img.height*scale);
+        const sctx = sc.getContext('2d');
+        sctx.imageSmoothingEnabled = true;
+        sctx.imageSmoothingQuality = 'high';
+        sctx.drawImage(img,0,0,sc.width,sc.height);
+        state.srcCanvas = sc;
+        state.srcData = sctx.getImageData(0,0,sc.width,sc.height);
+      }
+      const src = state.srcData;
+      const sw=src.width, sh=src.height;
+      const out = ctx.createImageData(w,h);
+      const outData = out.data, srcData = src.data;
+
+      const aspect = w/h;
+      const tanHalfFov = Math.tan(state.fov/2);
+      const cosY=Math.cos(state.yaw), sinY=Math.sin(state.yaw);
+      const cosP=Math.cos(state.pitch), sinP=Math.sin(state.pitch);
+      // 依輸出畫面總像素數動態決定是否需要跳點繪製以維持流暢度；
+      // 即使跳點，仍搭配雙線性內插填補，不會像最近鄰那樣產生鋸齒
+      const totalPx = w*h;
+      const step = totalPx > 3800000 ? 2 : 1;
+
+      for(let py=0; py<h; py+=step){
+        const ny=(py/h)*2-1;
+        const vy=-ny*tanHalfFov;
+        for(let px=0; px<w; px+=step){
+          const nx=(px/w)*2-1;
+          const vx=nx*tanHalfFov*aspect;
+          let dx=vx, dy=vy, dz=1;
+          const len=Math.sqrt(dx*dx+dy*dy+dz*dz);
+          dx/=len; dy/=len; dz/=len;
+          let ry=dy*cosP-dz*sinP;
+          let rz=dy*sinP+dz*cosP;
+          let rx=dx;
+          let fx=rx*cosY+rz*sinY;
+          let fz=-rx*sinY+rz*cosY;
+          let fy=ry;
+          const lon=Math.atan2(fx,fz);
+          const lat=Math.asin(Math.max(-1,Math.min(1,fy)));
+
+          // 浮點來源座標（不取整），用於雙線性內插
+          let sxF=((lon/Math.PI)*0.5+0.5)*sw;
+          let syF=(0.5-(lat/Math.PI))*sh;
+
+          // 處理水平環繞（equirect 左右邊界相接）
+          sxF = ((sxF % sw) + sw) % sw;
+          syF = Math.min(sh-1.001, Math.max(0, syF));
+
+          const x0 = sxF|0;
+          const y0 = syF|0;
+          const x1 = (x0+1) % sw;
+          const y1 = Math.min(sh-1, y0+1);
+          const fx2 = sxF - x0;
+          const fy2 = syF - y0;
+
+          const i00=(y0*sw+x0)*4, i10=(y0*sw+x1)*4, i01=(y1*sw+x0)*4, i11=(y1*sw+x1)*4;
+
+          const w00=(1-fx2)*(1-fy2), w10=fx2*(1-fy2), w01=(1-fx2)*fy2, w11=fx2*fy2;
+
+          const r = srcData[i00]*w00 + srcData[i10]*w10 + srcData[i01]*w01 + srcData[i11]*w11;
+          const g = srcData[i00+1]*w00 + srcData[i10+1]*w10 + srcData[i01+1]*w01 + srcData[i11+1]*w11;
+          const b = srcData[i00+2]*w00 + srcData[i10+2]*w10 + srcData[i01+2]*w01 + srcData[i11+2]*w11;
+
+          for(let oy=0; oy<step && py+oy<h; oy++){
+            for(let ox=0; ox<step && px+ox<w; ox++){
+              const di=((py+oy)*w+(px+ox))*4;
+              outData[di]=r; outData[di+1]=g; outData[di+2]=b; outData[di+3]=255;
+            }
+          }
+        }
+      }
+      ctx.putImageData(out,0,0);
+    }
+
+    function projectToScreen(hYaw,hPitch){
+      const wrap = canvas.parentElement;
+      const cosY=Math.cos(state.yaw), sinY=Math.sin(state.yaw);
+      const cosP=Math.cos(state.pitch), sinP=Math.sin(state.pitch);
+      const wx=Math.cos(hPitch)*Math.sin(hYaw);
+      const wy=Math.sin(hPitch);
+      const wz=Math.cos(hPitch)*Math.cos(hYaw);
+      let fx=wx*cosY-wz*sinY;
+      let fz=wx*sinY+wz*cosY;
+      let fy=wy;
+      let dy=fy*cosP+fz*sinP;
+      let dz=-fy*sinP+fz*cosP;
+      let dx=fx;
+      if(dz<=0.001) return null;
+      const aspect = wrap.clientWidth/wrap.clientHeight;
+      const tanHalfFov=Math.tan(state.fov/2);
+      const ndx=(dx/dz)/(tanHalfFov*aspect);
+      const ndy=(dy/dz)/tanHalfFov;
+      if(Math.abs(ndx)>1.15||Math.abs(ndy)>1.15) return null;
+      return { x:(ndx*0.5+0.5)*wrap.clientWidth, y:(1-(ndy*0.5+0.5))*wrap.clientHeight };
+    }
+
+    function screenToYawPitch(px,py){
+      const wrap = canvas.parentElement;
+      const aspect = wrap.clientWidth/wrap.clientHeight;
+      const tanHalfFov=Math.tan(state.fov/2);
+      const nx=(px/wrap.clientWidth)*2-1;
+      const ny=(py/wrap.clientHeight)*2-1;
+      const vx=nx*tanHalfFov*aspect;
+      const vy=-ny*tanHalfFov;
+      let dx=vx,dy=vy,dz=1;
+      const len=Math.sqrt(dx*dx+dy*dy+dz*dz);
+      dx/=len; dy/=len; dz/=len;
+      const cosP=Math.cos(state.pitch), sinP=Math.sin(state.pitch);
+      let ry=dy*cosP-dz*sinP;
+      let rz=dy*sinP+dz*cosP;
+      let rx=dx;
+      const cosY=Math.cos(state.yaw), sinY=Math.sin(state.yaw);
+      let fx=rx*cosY+rz*sinY;
+      let fz=-rx*sinY+rz*cosY;
+      let fy=ry;
+      const lon=Math.atan2(fx,fz);
+      const lat=Math.asin(Math.max(-1,Math.min(1,fy)));
+      return {yaw:lon, pitch:lat};
+    }
+
+    function bindDrag(opts){
+      opts = opts||{};
+      let dragging=false, lastX=0, lastY=0;
+      const wrap = canvas.parentElement;
+      wrap.addEventListener('mousedown', e=>{
+        if(opts.onMouseDown && opts.onMouseDown(e)) return;
+        dragging=true; lastX=e.clientX; lastY=e.clientY; wrap.classList.add('dragging');
+      });
+      window.addEventListener('mousemove', e=>{
+        if(!dragging) return;
+        const dx=e.clientX-lastX, dy=e.clientY-lastY;
+        lastX=e.clientX; lastY=e.clientY;
+        state.yaw -= dx*0.0028*state.fov;
+        state.pitch = clampPitch(state.pitch + dy*0.0028*state.fov);
+        render();
+        if(opts.onChange) opts.onChange();
+      });
+      window.addEventListener('mouseup', ()=>{ dragging=false; wrap.classList.remove('dragging'); });
+
+      let lastTouchDist=null;
+      wrap.addEventListener('touchstart', e=>{
+        if(e.touches.length===1){
+          if(opts.onMouseDown && opts.onMouseDown(e.touches[0])) return;
+          dragging=true; lastX=e.touches[0].clientX; lastY=e.touches[0].clientY;
+        } else if(e.touches.length===2){
+          lastTouchDist = Math.hypot(e.touches[0].clientX-e.touches[1].clientX, e.touches[0].clientY-e.touches[1].clientY);
+        }
+      },{passive:true});
+      wrap.addEventListener('touchmove', e=>{
+        if(e.touches.length===1 && dragging){
+          const dx=e.touches[0].clientX-lastX, dy=e.touches[0].clientY-lastY;
+          lastX=e.touches[0].clientX; lastY=e.touches[0].clientY;
+          state.yaw -= dx*0.0028*state.fov;
+          state.pitch = clampPitch(state.pitch + dy*0.0028*state.fov);
+          render();
+          if(opts.onChange) opts.onChange();
+        } else if(e.touches.length===2 && lastTouchDist){
+          const d = Math.hypot(e.touches[0].clientX-e.touches[1].clientX, e.touches[0].clientY-e.touches[1].clientY);
+          const delta=(lastTouchDist-d)*0.0025;
+          lastTouchDist=d;
+          setFov(state.fov+delta); render();
+          if(opts.onChange) opts.onChange();
+        }
+      },{passive:true});
+      wrap.addEventListener('touchend', ()=>{ dragging=false; lastTouchDist=null; });
+
+      wrap.addEventListener('wheel', e=>{
+        e.preventDefault();
+        setFov(state.fov + e.deltaY*0.001);
+        render();
+        if(opts.onChange) opts.onChange();
+      },{passive:false});
+    }
+
+    return { canvas, state, resize, setImage, render, setFov, clampPitch, projectToScreen, screenToYawPitch, bindDrag, FOV_MIN, FOV_MAX };
+  }
+
+  /* =========================================================
+     模式切換
+  ========================================================= */
+  const modeButtons = document.querySelectorAll('.mode-btn');
+  const compareView = document.getElementById('compare-view');
+  const stage = document.getElementById('stage');
+  const sidebar = document.getElementById('sidebar');
+  const sidebarToggle = document.getElementById('sidebar-toggle');
+  let currentMode = 'tour';
+
+  modeButtons.forEach(btn=>{
+    btn.addEventListener('click', ()=>{
+      const m = btn.dataset.mode;
+      if(m===currentMode) return;
+      currentMode = m;
+      modeButtons.forEach(b=>b.classList.toggle('active', b===btn));
+      if(m==='tour'){
+        compareView.classList.remove('show');
+        stage.style.display='';
+        sidebar.style.display='';
+        sidebarToggle.style.display='';
+      } else {
+        compareView.classList.add('show');
+        stage.style.display='none';
+        sidebar.style.display='none';
+        sidebarToggle.style.display='none';
+        setTimeout(()=>{
+          pointEngine.resize(); pointEngineB.resize(); pointEngine.render(); renderMapPins();
+          if(geoMap){ geoMap.invalidateSize(); renderGeoPins(); }
+        },50);
+      }
+    });
+  });
+
+  /* =========================================================
+     PART A：環景導覽模式（沿用既有邏輯）
+  ========================================================= */
+  let scenes = [];
+  let activeSceneId = null;
+  let pendingUploadDataUrl = null;
+
+  const tourEngine = createPanoEngine(document.getElementById('pano-canvas'));
+  tourEngine.resize();
+  window.addEventListener('resize', ()=>{ tourEngine.resize(); tourEngine.render(); placeHotspots(); });
+
+  const sceneListEl = document.getElementById('scene-list');
+  const sceneCountEl = document.getElementById('scene-count');
+  const emptyStage = document.getElementById('empty-stage');
+  const sceneTitleEl = document.getElementById('scene-title');
+  const sceneEyebrowEl = document.getElementById('scene-eyebrow');
+  const sceneCoordsEl = document.getElementById('scene-coords');
+  const fovReadout = document.getElementById('fov-readout');
+  const hotspotBanner = document.getElementById('hotspot-banner');
+  const hotspotLayer = (()=>{ const d=document.createElement('div'); d.style.position='absolute'; d.style.inset='0'; d.style.zIndex='15'; d.style.pointerEvents='none'; stage.appendChild(d); return d; })();
+  let hotspotMode=false, pendingHotspotPos=null;
+
+  tourEngine.bindDrag({
+    onMouseDown: ()=>{
+      if(hotspotMode) return false;
+      return false;
+    },
+    onChange: ()=> placeHotspots()
+  });
+  stage.addEventListener('click', e=>{
+    if(!hotspotMode) return;
+    if(e.target.closest('.hotspot')) return;
+    const rect = stage.getBoundingClientRect();
+    handleHotspotPlacement(e.clientX-rect.left, e.clientY-rect.top);
+  });
+
+  function setTourFov(v){
+    tourEngine.setFov(v);
+    fovReadout.textContent = Math.round(tourEngine.state.fov*180/Math.PI)+'°';
+    tourEngine.render(); placeHotspots();
+  }
+  document.getElementById('btn-zoom-in').addEventListener('click', ()=>setTourFov(tourEngine.state.fov-0.12));
+  document.getElementById('btn-zoom-out').addEventListener('click', ()=>setTourFov(tourEngine.state.fov+0.12));
+
+  function placeHotspots(){
+    hotspotLayer.innerHTML='';
+    const scene = scenes.find(s=>s.id===activeSceneId);
+    if(!scene) return;
+    scene.hotspots.forEach(h=>{
+      const p = tourEngine.projectToScreen(h.yaw, h.pitch);
+      if(!p) return;
+      const target = scenes.find(s=>s.id===h.targetId);
+      const el = document.createElement('div');
+      el.className='hotspot';
+      el.style.left=p.x+'px'; el.style.top=p.y+'px'; el.style.pointerEvents='auto';
+      el.innerHTML = `<div class="hotspot-ring"></div><div class="hotspot-core"></div><div class="hotspot-label">${escapeHtml(h.label||(target?target.name:'未知場景'))}</div><div class="hotspot-del-btn" title="刪除熱點">×</div>`;
+      el.addEventListener('click', e=>{ e.stopPropagation(); if(target) loadScene(target.id, h.label); });
+      el.querySelector('.hotspot-del-btn').addEventListener('click', e=>{ e.stopPropagation(); deleteHotspot(activeSceneId, h.id); });
+      hotspotLayer.appendChild(el);
+    });
+  }
+
+  function renderSceneList(){
+    sceneCountEl.textContent = String(scenes.length).padStart(2,'0')+' 個場景';
+    if(scenes.length===0){
+      sceneListEl.innerHTML = `<div class="sb-empty"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="12" cy="12" r="9"/><path d="M3 12h18"/></svg>尚未加入任何場景<br>點上方「新增場景」開始建置</div>`;
+      return;
+    }
+    sceneListEl.innerHTML='';
+    scenes.forEach((s,i)=>{
+      const card=document.createElement('div');
+      card.className='scene-card'+(s.id===activeSceneId?' active':'');
+      card.innerHTML = `
+        <div class="scene-idx">${String(i+1).padStart(2,'0')}</div>
+        <div class="scene-thumb" style="background-image:url('${s.src}')"></div>
+        <div class="scene-meta">
+          <div class="scene-name">${escapeHtml(s.name)}</div>
+          <div class="scene-tag">${s.hotspots.length} 熱點${s.note?' · '+escapeHtml(s.note):''}</div>
+        </div>
+        <div class="scene-edit" data-id="${s.id}" title="編輯場景">
+          <svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
+        </div>
+        <div class="scene-del" data-id="${s.id}" title="刪除場景">
+          <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M3 6h18M8 6V4a2 2 0 012-2h4a2 2 0 012 2v2m3 0l-1 14a2 2 0 01-2 2H7a2 2 0 01-2-2L4 6"/></svg>
+        </div>`;
+      card.addEventListener('click', e=>{ if(e.target.closest('.scene-del')||e.target.closest('.scene-edit')) return; loadScene(s.id); });
+      card.querySelector('.scene-edit').addEventListener('click', e=>{ e.stopPropagation(); openEditSceneModal(s.id); });
+      card.querySelector('.scene-del').addEventListener('click', e=>{ e.stopPropagation(); deleteScene(s.id); });
+      sceneListEl.appendChild(card);
+    });
+  }
+
+  function loadScene(id, transitionLabel){
+    const scene = scenes.find(s=>s.id===id);
+    if(!scene) return;
+    activeSceneId=id;
+    tourEngine.setImage(scene.img);
+    setTourFov(Math.PI/2);
+    sceneTitleEl.textContent = scene.name;
+    sceneEyebrowEl.textContent = transitionLabel ? ('→ '+transitionLabel) : ('SCENE / '+(scenes.findIndex(s=>s.id===id)+1).toString().padStart(2,'0'));
+    sceneCoordsEl.textContent = scene.note ? scene.note : 'EQUIRECTANGULAR · NO METADATA';
+    emptyStage.classList.add('hidden');
+    renderSceneList();
+    tourEngine.render(); placeHotspots();
+  }
+
+  function deleteScene(id){
+    const idx = scenes.findIndex(s=>s.id===id);
+    if(idx===-1) return;
+    if(!confirm('確定要刪除此場景嗎？指向此場景的熱點將一併失效。')) return;
+    scenes.splice(idx,1);
+    deletedSceneIds.add(id);
+    scenes.forEach(s=>{
+      const before = s.hotspots.length;
+      s.hotspots = s.hotspots.filter(h=>h.targetId!==id);
+      if(s.hotspots.length !== before) markSceneDirty(s.id);
+    });
+    if(activeSceneId===id){
+      activeSceneId = scenes.length ? scenes[0].id : null;
+      if(activeSceneId) loadScene(activeSceneId);
+      else {
+        sceneTitleEl.textContent='尚未載入場景'; sceneEyebrowEl.textContent='--'; sceneCoordsEl.textContent='LAT -- / LON --';
+        emptyStage.classList.remove('hidden');
+        tourEngine.canvas.getContext('2d').clearRect(0,0,tourEngine.canvas.width,tourEngine.canvas.height);
+      }
+    }
+    renderSceneList();
+    scheduleSave();
+    showToast('已刪除場景');
+  }
+
+  function deleteHotspot(sceneId, hotspotId){
+    const scene = scenes.find(s=>s.id===sceneId);
+    if(!scene) return;
+    scene.hotspots = scene.hotspots.filter(h=>h.id!==hotspotId);
+    markSceneDirty(sceneId);
+    renderSceneList(); placeHotspots(); scheduleSave(); showToast('熱點已刪除');
+  }
+
+  const modalEditScene = document.getElementById('modal-edit-scene');
+  let editingSceneId = null;
+  function openEditSceneModal(sceneId){
+    const scene = scenes.find(s=>s.id===sceneId);
+    if(!scene) return;
+    editingSceneId = sceneId;
+    document.getElementById('input-edit-scene-name').value = scene.name;
+    document.getElementById('input-edit-scene-note').value = scene.note || '';
+    modalEditScene.classList.add('show');
+  }
+  document.getElementById('btn-cancel-edit-scene').addEventListener('click', ()=>modalEditScene.classList.remove('show'));
+  modalEditScene.addEventListener('click', e=>{ if(e.target===modalEditScene) modalEditScene.classList.remove('show'); });
+  document.getElementById('btn-confirm-edit-scene').addEventListener('click', ()=>{
+    const scene = scenes.find(s=>s.id===editingSceneId);
+    if(!scene) return;
+    const name = document.getElementById('input-edit-scene-name').value.trim();
+    if(!name){ showToast('請輸入場景名稱'); return; }
+    scene.name = name;
+    scene.note = document.getElementById('input-edit-scene-note').value.trim();
+    if(activeSceneId===editingSceneId){
+      sceneTitleEl.textContent = scene.name;
+      sceneCoordsEl.textContent = scene.note || 'EQUIRECTANGULAR · NO METADATA';
+    }
+    modalEditScene.classList.remove('show');
+    renderSceneList();
+    markSceneDirty(scene.id);
+    scheduleSave();
+    showToast('場景已更新');
+  });
+
+  const modalAdd = document.getElementById('modal-add-scene');
+  const uploadZone = document.getElementById('upload-zone');
+  const fileInput = document.getElementById('file-input');
+  const uploadPreview = document.getElementById('upload-preview');
+  const inputSceneName = document.getElementById('input-scene-name');
+  const inputSceneNote = document.getElementById('input-scene-note');
+
+  document.getElementById('btn-add-scene').addEventListener('click', ()=>{
+    pendingUploadDataUrl=null; uploadPreview.style.display='none';
+    inputSceneName.value=''; inputSceneNote.value='';
+    modalAdd.classList.add('show');
+  });
+  document.getElementById('btn-cancel-add').addEventListener('click', ()=>modalAdd.classList.remove('show'));
+  modalAdd.addEventListener('click', e=>{ if(e.target===modalAdd) modalAdd.classList.remove('show'); });
+
+  setupUploadZone(uploadZone, fileInput, dataUrl=>{
+    pendingUploadDataUrl=dataUrl;
+    uploadPreview.style.backgroundImage=`url('${dataUrl}')`;
+    uploadPreview.style.display='block';
+  }, fileName=>{ if(!inputSceneName.value) inputSceneName.value=fileName; });
+
+  document.getElementById('btn-confirm-add').addEventListener('click', ()=>{
+    if(!pendingUploadDataUrl){ showToast('請先選擇全景圖檔案'); return; }
+    const name = inputSceneName.value.trim() || ('場景 '+(scenes.length+1));
+    const note = inputSceneNote.value.trim();
+    const img = new Image();
+    img.onload=()=>{
+      const ratio = img.width/img.height;
+      const id = 'scene-'+Date.now()+'-'+Math.floor(Math.random()*1000);
+      scenes.push({ id, name, note, img, src:pendingUploadDataUrl, hotspots:[] });
+      renderSceneList(); loadScene(id);
+      modalAdd.classList.remove('show');
+      markSceneDirty(id);
+      scheduleSave();
+      showToast(Math.abs(ratio-2)>0.25 ? '提醒：圖片比例非標準 2:1，顯示可能略有變形' : '場景已新增');
+    };
+    img.onerror=()=>showToast('圖片載入失敗，請確認檔案格式');
+    img.src = pendingUploadDataUrl;
+  });
+
+  const btnHotspotMode = document.getElementById('btn-hotspot-mode');
+  btnHotspotMode.addEventListener('click', ()=>{
+    if(!scenes.find(s=>s.id===activeSceneId)){ showToast('請先載入一個場景'); return; }
+    if(scenes.length<2){ showToast('需要至少兩個場景才能建立跳轉熱點'); return; }
+    hotspotMode=!hotspotMode;
+    btnHotspotMode.classList.toggle('active', hotspotMode);
+    stage.classList.toggle('hotspot-mode', hotspotMode);
+    hotspotBanner.classList.toggle('show', hotspotMode);
+  });
+  document.getElementById('btn-cancel-hotspot').addEventListener('click', exitHotspotMode);
+  function exitHotspotMode(){
+    hotspotMode=false; btnHotspotMode.classList.remove('active');
+    stage.classList.remove('hotspot-mode'); hotspotBanner.classList.remove('show');
+  }
+  function handleHotspotPlacement(px,py){
+    pendingHotspotPos = tourEngine.screenToYawPitch(px,py);
+    exitHotspotMode();
+    openHotspotModal();
+  }
+
+  const modalHotspot = document.getElementById('modal-hotspot');
+  const targetListEl = document.getElementById('target-list');
+  const inputHotspotLabel = document.getElementById('input-hotspot-label');
+  let selectedTargetId=null;
+  function openHotspotModal(){
+    selectedTargetId=null; inputHotspotLabel.value='';
+    const scene = scenes.find(s=>s.id===activeSceneId);
+    const others = scenes.filter(s=>s.id!==scene.id);
+    targetListEl.innerHTML = others.map(s=>`
+      <div class="target-item" data-id="${s.id}">
+        <div class="target-thumb" style="background-image:url('${s.src}')"></div>
+        <div class="target-name">${escapeHtml(s.name)}</div>
+      </div>`).join('');
+    targetListEl.querySelectorAll('.target-item').forEach(el=>{
+      el.addEventListener('click', ()=>{
+        targetListEl.querySelectorAll('.target-item').forEach(x=>x.classList.remove('selected'));
+        el.classList.add('selected'); selectedTargetId=el.dataset.id;
+      });
+    });
+    modalHotspot.classList.add('show');
+  }
+  document.getElementById('btn-cancel-hotspot-modal').addEventListener('click', ()=>modalHotspot.classList.remove('show'));
+  modalHotspot.addEventListener('click', e=>{ if(e.target===modalHotspot) modalHotspot.classList.remove('show'); });
+  document.getElementById('btn-confirm-hotspot').addEventListener('click', ()=>{
+    if(!selectedTargetId){ showToast('請選擇要跳轉的場景'); return; }
+    const scene = scenes.find(s=>s.id===activeSceneId);
+    const label = inputHotspotLabel.value.trim();
+    scene.hotspots.push({ id:'hs-'+Date.now(), yaw:pendingHotspotPos.yaw, pitch:pendingHotspotPos.pitch, targetId:selectedTargetId, label });
+    modalHotspot.classList.remove('show');
+    markSceneDirty(scene.id);
+    renderSceneList(); placeHotspots(); scheduleSave(); showToast('熱點已建立');
+  });
+
+  sidebarToggle.addEventListener('click', ()=>sidebar.classList.toggle('collapsed'));
+  document.getElementById('btn-fullscreen').addEventListener('click', ()=>{
+    if(!document.fullscreenElement) stage.requestFullscreen?.();
+    else document.exitFullscreen?.();
+  });
+
+  // ===== 自動旋轉 =====
+  let autoRotateActive = false;
+  let autoRotateRaf = null;
+  const btnAutoRotate = document.getElementById('btn-auto-rotate');
+
+  function startAutoRotate(){
+    function tick(){
+      if(!autoRotateActive) return;
+      tourEngine.state.yaw += 0.004;
+      tourEngine.render();
+      placeHotspots();
+      autoRotateRaf = requestAnimationFrame(tick);
+    }
+    autoRotateRaf = requestAnimationFrame(tick);
+  }
+  function stopAutoRotate(){
+    autoRotateActive = false;
+    btnAutoRotate.classList.remove('active');
+    if(autoRotateRaf){ cancelAnimationFrame(autoRotateRaf); autoRotateRaf=null; }
+  }
+
+  stage.addEventListener('mousedown', ()=>{ if(autoRotateActive) stopAutoRotate(); });
+  stage.addEventListener('touchstart', ()=>{ if(autoRotateActive) stopAutoRotate(); }, {passive:true});
+
+  btnAutoRotate.addEventListener('click', ()=>{
+    if(!scenes.find(s=>s.id===activeSceneId)){ showToast('請先載入場景才能自動旋轉'); return; }
+    autoRotateActive = !autoRotateActive;
+    btnAutoRotate.classList.toggle('active', autoRotateActive);
+    if(autoRotateActive) startAutoRotate();
+    else stopAutoRotate();
+  });
+
+  function setupUploadZone(zone, input, onLoaded, onName){
+    zone.addEventListener('click', ()=>input.click());
+    zone.addEventListener('dragover', e=>{ e.preventDefault(); zone.classList.add('dragover'); });
+    zone.addEventListener('dragleave', ()=>zone.classList.remove('dragover'));
+    zone.addEventListener('drop', e=>{
+      e.preventDefault(); zone.classList.remove('dragover');
+      if(e.dataTransfer.files[0]) handle(e.dataTransfer.files[0]);
+    });
+    input.addEventListener('change', ()=>{ if(input.files[0]) handle(input.files[0]); });
+    function handle(file){
+      if(!file.type.startsWith('image/')){ showToast('請上傳圖片檔案'); return; }
+      readFileAsDataUrl(file, dataUrl=>{
+        onLoaded(dataUrl);
+        if(onName) onName(file.name.replace(/\.[^.]+$/,''));
+      });
+    }
+  }
+
+  /* =========================================================
+     PART B：地圖時期比對模式
+  ========================================================= */
+  let basemap = null; // { src, img, name }
+  let points = [];     // { id, x, y(相對底圖原始像素座標), name, note, epochs:[{id,year,month,note,img,src}] }
+  let activePointId = null;
+  let activeEpochId = null;
+  let placingMode = false;
+
+  const mapWrap = document.getElementById('map-canvas-wrap');
+  const mapContent = document.getElementById('map-content');
+  const mapNoBase = document.getElementById('map-no-base');
+  const mapSub = document.getElementById('map-sub');
+  const mapPlacingBanner = document.getElementById('map-placing-banner');
+
+  let mapScale = 1, mapPanX = 0, mapPanY = 0;
+  let mapDragging=false, mapLastX=0, mapLastY=0;
+
+  function applyMapTransform(){
+    mapContent.style.transform = `translate(${mapPanX}px, ${mapPanY}px) scale(${mapScale})`;
+  }
+
+  function fitMapToWrap(){
+    if(!basemap) return;
+    const ww = mapWrap.clientWidth, wh = mapWrap.clientHeight;
+    const iw = basemap.img.width, ih = basemap.img.height;
+    const scale = Math.min(ww/iw, wh/ih) * 0.92;
+    mapScale = scale;
+    mapPanX = (ww - iw*scale)/2;
+    mapPanY = (wh - ih*scale)/2;
+    applyMapTransform();
+  }
+
+  mapWrap.addEventListener('mousedown', e=>{
+    if(placingMode){
+      placePointAt(e.clientX, e.clientY);
+      return;
+    }
+    if(e.target.closest('.map-pin')) return;
+    mapDragging=true; mapLastX=e.clientX; mapLastY=e.clientY; mapWrap.classList.add('dragging');
+  });
+  window.addEventListener('mousemove', e=>{
+    if(!mapDragging) return;
+    mapPanX += e.clientX-mapLastX; mapPanY += e.clientY-mapLastY;
+    mapLastX=e.clientX; mapLastY=e.clientY;
+    applyMapTransform(); renderMapPins();
+  });
+  window.addEventListener('mouseup', ()=>{ mapDragging=false; mapWrap.classList.remove('dragging'); });
+  mapWrap.addEventListener('wheel', e=>{
+    if(!basemap) return;
+    e.preventDefault();
+    const rect = mapWrap.getBoundingClientRect();
+    const mx = e.clientX-rect.left, my = e.clientY-rect.top;
+    const prevScale = mapScale;
+    const delta = -e.deltaY*0.0015;
+    mapScale = Math.max(0.1, Math.min(6, mapScale * (1+delta)));
+    const ratio = mapScale/prevScale;
+    mapPanX = mx - (mx-mapPanX)*ratio;
+    mapPanY = my - (my-mapPanY)*ratio;
+    applyMapTransform(); renderMapPins();
+  },{passive:false});
+
+  // 自訂底圖觸控支援（拖曳與雙指縮放）
+  let mapTouchLastX=0, mapTouchLastY=0, mapPinchDist=null;
+  mapWrap.addEventListener('touchstart', e=>{
+    if(placingMode){ if(e.touches.length===1) placePointAt(e.touches[0].clientX, e.touches[0].clientY); return; }
+    if(e.target.closest('.map-pin')) return;
+    if(e.touches.length===1){
+      mapDragging=true; mapTouchLastX=e.touches[0].clientX; mapTouchLastY=e.touches[0].clientY;
+      mapWrap.classList.add('dragging');
+    } else if(e.touches.length===2){
+      mapDragging=false; mapWrap.classList.remove('dragging');
+      mapPinchDist=Math.hypot(e.touches[0].clientX-e.touches[1].clientX, e.touches[0].clientY-e.touches[1].clientY);
+    }
+  },{passive:true});
+  mapWrap.addEventListener('touchmove', e=>{
+    if(!basemap) return;
+    if(e.touches.length===1 && mapDragging){
+      mapPanX += e.touches[0].clientX-mapTouchLastX; mapPanY += e.touches[0].clientY-mapTouchLastY;
+      mapTouchLastX=e.touches[0].clientX; mapTouchLastY=e.touches[0].clientY;
+      applyMapTransform(); renderMapPins();
+    } else if(e.touches.length===2 && mapPinchDist!==null){
+      const d=Math.hypot(e.touches[0].clientX-e.touches[1].clientX, e.touches[0].clientY-e.touches[1].clientY);
+      const midX=(e.touches[0].clientX+e.touches[1].clientX)/2;
+      const midY=(e.touches[0].clientY+e.touches[1].clientY)/2;
+      const rect=mapWrap.getBoundingClientRect();
+      const mx=midX-rect.left, my=midY-rect.top;
+      const prevScale=mapScale;
+      mapScale=Math.max(0.1, Math.min(6, mapScale*(d/mapPinchDist)));
+      mapPinchDist=d;
+      const ratio=mapScale/prevScale;
+      mapPanX=mx-(mx-mapPanX)*ratio; mapPanY=my-(my-mapPanY)*ratio;
+      applyMapTransform(); renderMapPins();
+    }
+  },{passive:true});
+  mapWrap.addEventListener('touchend', e=>{
+    if(e.touches.length===0){ mapDragging=false; mapPinchDist=null; mapWrap.classList.remove('dragging'); }
+    else if(e.touches.length===1){ mapPinchDist=null; }
+  },{passive:true});
+
+  document.getElementById('map-zoom-in').addEventListener('click', ()=>zoomMapBy(1.2));
+  document.getElementById('map-zoom-out').addEventListener('click', ()=>zoomMapBy(0.83));
+  document.getElementById('map-zoom-reset').addEventListener('click', fitMapToWrap);
+  function zoomMapBy(f){
+    if(!basemap) return;
+    const ww=mapWrap.clientWidth, wh=mapWrap.clientHeight;
+    const prevScale=mapScale;
+    mapScale = Math.max(0.1, Math.min(6, mapScale*f));
+    const ratio = mapScale/prevScale;
+    mapPanX = ww/2 - (ww/2-mapPanX)*ratio;
+    mapPanY = wh/2 - (wh/2-mapPanY)*ratio;
+    applyMapTransform(); renderMapPins();
+  }
+
+  function placePointAt(clientX, clientY){
+    const rect = mapWrap.getBoundingClientRect();
+    const localX = clientX-rect.left, localY = clientY-rect.top;
+    const imgX = (localX - mapPanX) / mapScale;
+    const imgY = (localY - mapPanY) / mapScale;
+    pendingPointPos = { kind:'custom', x:imgX, y:imgY };
+    exitPlacingMode();
+    openPointModal();
+  }
+
+  document.getElementById('btn-place-point').addEventListener('click', ()=>{
+    if(mapSourceMode === 'custom'){
+      if(!basemap){ showToast('請先設定底圖'); return; }
+      placingMode = !placingMode;
+      mapWrap.classList.toggle('placing', placingMode);
+      mapPlacingBanner.classList.toggle('show', placingMode);
+    } else {
+      geoPlacingMode = !geoPlacingMode;
+      document.getElementById('geo-map-wrap').classList.toggle('placing', geoPlacingMode);
+      geoPlacingBanner.classList.toggle('show', geoPlacingMode);
+      geoMap.getContainer().style.cursor = geoPlacingMode ? 'crosshair' : '';
+    }
+  });
+  document.getElementById('btn-cancel-place').addEventListener('click', exitPlacingMode);
+  function exitPlacingMode(){
+    placingMode=false; mapWrap.classList.remove('placing'); mapPlacingBanner.classList.remove('show');
+  }
+
+  /* =========================================================
+     PART B-2：地理地圖（Leaflet / OpenStreetMap・衛星影像）
+  ========================================================= */
+  let mapSourceMode = 'custom'; // 'custom' | 'geo'
+  let geoMap = null;
+  let geoPlacingMode = false;
+  let geoMarkers = {}; // pointId -> L.marker
+  let geoLayers = {};
+  const geoPlacingBanner = document.getElementById('geo-placing-banner');
+  const geoCoordReadout = document.getElementById('geo-coord-readout');
+
+  const TAIWAN_DEFAULT_CENTER = [23.97, 120.97]; // 台灣中部，貼合使用者所在地區
+  const TAIWAN_DEFAULT_ZOOM = 9;
+
+  function initGeoMap(){
+    if(geoMap) return;
+    geoMap = L.map('geo-map', { zoomControl:true, attributionControl:true })
+      .setView(TAIWAN_DEFAULT_CENTER, TAIWAN_DEFAULT_ZOOM);
+
+    const streetLayer = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+      maxZoom: 19,
+      attribution: '&copy; OpenStreetMap contributors'
+    });
+    const satelliteLayer = L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', {
+      maxZoom: 19,
+      attribution: 'Tiles &copy; Esri &mdash; Source: Esri, Maxar, Earthstar Geographics'
+    });
+    streetLayer.addTo(geoMap);
+    geoLayers = { street: streetLayer, satellite: satelliteLayer };
+
+    geoMap.on('mousemove', e=>{
+      geoCoordReadout.textContent = `${e.latlng.lat.toFixed(5)}, ${e.latlng.lng.toFixed(5)}`;
+    });
+    geoMap.on('click', e=>{
+      if(!geoPlacingMode) return;
+      placeGeoPointAt(e.latlng.lat, e.latlng.lng);
+    });
+
+    setTimeout(()=>geoMap.invalidateSize(), 60);
+  }
+
+  document.querySelectorAll('.layer-btn').forEach(btn=>{
+    btn.addEventListener('click', ()=>{
+      const layer = btn.dataset.layer;
+      document.querySelectorAll('.layer-btn').forEach(b=>b.classList.toggle('active', b===btn));
+      Object.values(geoLayers).forEach(l=>geoMap.removeLayer(l));
+      geoLayers[layer].addTo(geoMap);
+    });
+  });
+
+  document.getElementById('btn-cancel-geo-place').addEventListener('click', exitGeoPlacingMode);
+  function exitGeoPlacingMode(){
+    geoPlacingMode=false;
+    document.getElementById('geo-map-wrap').classList.remove('placing');
+    geoPlacingBanner.classList.remove('show');
+    geoMap.getContainer().style.cursor = '';
+  }
+
+  function placeGeoPointAt(lat, lon){
+    const ghostIcon = L.divIcon({
+      className:'', html:`<div class="geo-pin-icon"><svg width="26" height="26" viewBox="0 0 26 26"><path d="M13 1C7.5 1 3 5.5 3 11c0 7.5 10 14 10 14s10-6.5 10-14c0-5.5-4.5-10-10-10z" fill="#5fa884" opacity="0.85"/><circle cx="13" cy="11" r="4" fill="#0c0e10"/></svg></div>`,
+      iconSize:[26,26], iconAnchor:[13,26]
+    });
+    const ghostMarker = L.marker([lat, lon], { icon: ghostIcon, interactive:false }).addTo(geoMap);
+    pendingPointPos = { kind:'geo', lat, lon, _ghostMarker: ghostMarker };
+    exitGeoPlacingMode();
+    openPointModal();
+  }
+
+  function renderGeoPins(){
+    if(!geoMap) return;
+    Object.values(geoMarkers).forEach(m=>geoMap.removeLayer(m));
+    geoMarkers = {};
+    points.filter(p=>p.kind==='geo').forEach(p=>{
+      const isActive = p.id===activePointId;
+      const icon = L.divIcon({
+        className:'',
+        html:`<div class="geo-pin-icon"><svg width="28" height="28" viewBox="0 0 26 26"><path d="M13 1C7.5 1 3 5.5 3 11c0 7.5 10 14 10 14s10-6.5 10-14c0-5.5-4.5-10-10-10z" fill="${isActive?'#e8743b':'#4a90c2'}"/><circle cx="13" cy="11" r="4" fill="#0c0e10"/><text x="13" y="13" font-family="JetBrains Mono,monospace" font-size="8" font-weight="700" fill="${isActive?'#e8743b':'#4a90c2'}" text-anchor="middle"></text></svg><div style="position:absolute; top:3px; left:50%; transform:translateX(-50%); font-family:monospace; font-size:8.5px; font-weight:700; color:#0c0e10;">${p.epochs.length}</div></div>`,
+        iconSize:[28,28], iconAnchor:[14,28]
+      });
+      const marker = L.marker([p.lat, p.lon], { icon }).addTo(geoMap);
+      marker.bindTooltip(p.name, { direction:'top', offset:[0,-26] });
+      marker.on('click', ()=>selectPoint(p.id));
+      geoMarkers[p.id] = marker;
+    });
+  }
+
+  document.querySelectorAll('.map-src-btn').forEach(btn=>{
+    btn.addEventListener('click', ()=>{
+      const src = btn.dataset.src;
+      if(src === mapSourceMode) return;
+      mapSourceMode = src;
+      document.querySelectorAll('.map-src-btn').forEach(b=>b.classList.toggle('active', b===btn));
+      const customWrap = document.getElementById('map-canvas-wrap');
+      const geoWrap = document.getElementById('geo-map-wrap');
+      if(src === 'custom'){
+        customWrap.classList.add('show'); customWrap.classList.add('custom-active');
+        geoWrap.classList.remove('show');
+        exitGeoPlacingMode();
+      } else {
+        customWrap.classList.remove('show'); customWrap.classList.remove('custom-active');
+        geoWrap.classList.add('show');
+        exitPlacingMode();
+        initGeoMap();
+        setTimeout(()=>{ geoMap.invalidateSize(); renderGeoPins(); }, 30);
+      }
+    });
+  });
+
+  function renderMapPins(){
+    mapContent.querySelectorAll('.map-pin').forEach(el=>el.remove());
+    points.filter(p=>p.kind==='custom').forEach(p=>{
+      const el = document.createElement('div');
+      el.className='map-pin'+(p.id===activePointId?' selected':'');
+      el.style.left = p.x+'px';
+      el.style.top = p.y+'px';
+      el.style.transform = `scale(${1/mapScale})`;
+      el.style.transformOrigin = 'bottom center';
+      el.innerHTML = `
+        <svg viewBox="0 0 26 26"><path class="pin-fill" d="M13 1C7.5 1 3 5.5 3 11c0 7.5 10 14 10 14s10-6.5 10-14c0-5.5-4.5-10-10-10z"/><circle cx="13" cy="11" r="4" fill="#0c0e10"/></svg>
+        <div class="pin-count">${p.epochs.length}</div>
+      `;
+      el.title = p.name;
+      el.addEventListener('click', e=>{ e.stopPropagation(); selectPoint(p.id); });
+      mapContent.appendChild(el);
+    });
+  }
+
+  document.getElementById('btn-set-basemap').addEventListener('click', ()=>{
+    uploadPreviewMap.style.display='none';
+    pendingMapDataUrl=null;
+    document.getElementById('input-map-name').value = basemap ? basemap.name : '';
+    modalBasemap.classList.add('show');
+  });
+
+  const modalBasemap = document.getElementById('modal-basemap');
+  const uploadZoneMap = document.getElementById('upload-zone-map');
+  const fileInputMap = document.getElementById('file-input-map');
+  const uploadPreviewMap = document.getElementById('upload-preview-map');
+  let pendingMapDataUrl = null;
+
+  setupUploadZone(uploadZoneMap, fileInputMap, dataUrl=>{
+    pendingMapDataUrl = dataUrl;
+    uploadPreviewMap.style.backgroundImage = `url('${dataUrl}')`;
+    uploadPreviewMap.style.display='block';
+  }, fileName=>{
+    const nameInput = document.getElementById('input-map-name');
+    if(!nameInput.value) nameInput.value = fileName;
+  });
+
+  document.getElementById('btn-cancel-map').addEventListener('click', ()=>modalBasemap.classList.remove('show'));
+  modalBasemap.addEventListener('click', e=>{ if(e.target===modalBasemap) modalBasemap.classList.remove('show'); });
+  document.getElementById('btn-confirm-map').addEventListener('click', ()=>{
+    if(!pendingMapDataUrl && !basemap){ showToast('請先選擇底圖圖片'); return; }
+    const name = document.getElementById('input-map-name').value.trim() || '未命名底圖';
+    if(pendingMapDataUrl){
+      const img = new Image();
+      img.onload = ()=>{
+        basemap = { src:pendingMapDataUrl, img, name };
+        mapSub.textContent = name + ` · ${img.width}×${img.height}px`;
+        mapNoBase.classList.add('hidden');
+        mapContent.innerHTML = `<img src="${pendingMapDataUrl}" draggable="false">`;
+        fitMapToWrap();
+        renderMapPins();
+        modalBasemap.classList.remove('show');
+        markBasemapDirty();
+        scheduleSave();
+        showToast('底圖已設定');
+      };
+      img.onerror = ()=>showToast('圖片載入失敗');
+      img.src = pendingMapDataUrl;
+    } else {
+      basemap.name = name;
+      mapSub.textContent = name + ` · ${basemap.img.width}×${basemap.img.height}px`;
+      modalBasemap.classList.remove('show');
+      markBasemapDirty();
+      scheduleSave();
+      showToast('底圖名稱已更新');
+    }
+  });
+
+  // 新增點位 modal
+  const modalPoint = document.getElementById('modal-point');
+  let pendingPointPos = null;
+  let pendingPointEpochDataUrl = null;
+  const uploadZonePointEpoch = document.getElementById('upload-zone-point-epoch');
+  const uploadPreviewPointEpoch = document.getElementById('upload-preview-point-epoch');
+  const pointEpochDateRow = document.getElementById('point-epoch-date-row');
+
+  function openPointModal(){
+    document.getElementById('input-point-name').value='';
+    document.getElementById('input-point-note').value='';
+    document.getElementById('input-point-epoch-year').value='';
+    document.getElementById('input-point-epoch-month').value='';
+    pendingPointEpochDataUrl = null;
+    uploadPreviewPointEpoch.style.display='none';
+    pointEpochDateRow.style.display='none';
+    const coordRow = document.getElementById('point-coord-row');
+    const latInput = document.getElementById('input-point-lat');
+    const lonInput = document.getElementById('input-point-lon');
+    if(pendingPointPos.kind === 'geo'){
+      coordRow.style.display = 'flex';
+      latInput.value = pendingPointPos.lat.toFixed(6);
+      lonInput.value = pendingPointPos.lon.toFixed(6);
+    } else {
+      coordRow.style.display = 'none';
+    }
+    modalPoint.classList.add('show');
+  }
+  setupUploadZone(uploadZonePointEpoch, document.getElementById('file-input-point-epoch'), dataUrl=>{
+    pendingPointEpochDataUrl = dataUrl;
+    uploadPreviewPointEpoch.style.backgroundImage = `url('${dataUrl}')`;
+    uploadPreviewPointEpoch.style.display='block';
+    pointEpochDateRow.style.display='flex';
+    const yearInput = document.getElementById('input-point-epoch-year');
+    if(!yearInput.value) yearInput.value = String(new Date().getFullYear());
+  });
+  document.getElementById('btn-cancel-point').addEventListener('click', ()=>{
+    modalPoint.classList.remove('show');
+    if(pendingPointPos && pendingPointPos.kind==='geo' && pendingPointPos._ghostMarker){
+      geoMap.removeLayer(pendingPointPos._ghostMarker);
+    }
+  });
+  modalPoint.addEventListener('click', e=>{ if(e.target===modalPoint) modalPoint.classList.remove('show'); });
+  document.getElementById('btn-confirm-point').addEventListener('click', ()=>{
+    const name = document.getElementById('input-point-name').value.trim() || ('點位 '+(points.length+1));
+    const note = document.getElementById('input-point-note').value.trim();
+    const id = 'pt-'+Date.now();
+
+    // 若有選擇全景圖，年份為必填
+    let epochYear = '', epochMonth = '';
+    if(pendingPointEpochDataUrl){
+      epochYear = document.getElementById('input-point-epoch-year').value.trim();
+      epochMonth = document.getElementById('input-point-epoch-month').value.trim();
+      if(!epochYear){ showToast('已選擇全景圖，請填寫年份'); return; }
+    }
+
+    function finalizePoint(img){
+      const epochs = [];
+      if(img){
+        epochs.push({ id:'ep-'+Date.now(), year:epochYear, month:epochMonth, note:'', img, src:pendingPointEpochDataUrl, yawOffset:0 });
+      }
+      if(pendingPointPos.kind === 'geo'){
+        const latInput = document.getElementById('input-point-lat');
+        const lonInput = document.getElementById('input-point-lon');
+        const lat = parseFloat(latInput.value);
+        const lon = parseFloat(lonInput.value);
+        if(isNaN(lat) || isNaN(lon)){ showToast('請輸入有效的經緯度數值'); return; }
+        if(lat < -90 || lat > 90 || lon < -180 || lon > 180){ showToast('經緯度數值超出合理範圍'); return; }
+        points.push({ id, kind:'geo', lat, lon, name, note, epochs });
+        if(pendingPointPos._ghostMarker) geoMap.removeLayer(pendingPointPos._ghostMarker);
+        renderGeoPins();
+      } else {
+        points.push({ id, kind:'custom', x:pendingPointPos.x, y:pendingPointPos.y, name, note, epochs });
+        renderMapPins();
+      }
+      modalPoint.classList.remove('show');
+      selectPoint(id);
+      markPointDirty(id);
+      if(img) markEpochDirty(id, epochs[0].id);
+      scheduleSave();
+      showToast(img ? '點位與全景已建立' : '點位已建立，請新增時期全景');
+    }
+
+    if(pendingPointEpochDataUrl){
+      const img = new Image();
+      img.onload = ()=>finalizePoint(img);
+      img.onerror = ()=>showToast('全景圖載入失敗，請確認檔案格式');
+      img.src = pendingPointEpochDataUrl;
+    } else {
+      finalizePoint(null);
+    }
+  });
+
+  // 右側：選取點位
+  const pointEmpty = document.getElementById('point-empty');
+  const pointActive = document.getElementById('point-active');
+  const pointTitle = document.getElementById('point-title');
+  const pointSub = document.getElementById('point-sub');
+  const epochTabs = document.getElementById('epoch-tabs');
+  const pointNoEpoch = document.getElementById('point-no-epoch');
+  const pointStage = document.getElementById('point-stage');
+
+  const pointEngine = createPanoEngine(document.getElementById('point-canvas'));
+  const pointEngineB = createPanoEngine(document.getElementById('point-canvas-b'));
+  pointEngine.resize(); pointEngineB.resize();
+  window.addEventListener('resize', ()=>{
+    pointEngine.resize(); pointEngineB.resize();
+    pointEngine.render(); pointEngineB.render();
+  });
+
+  const ptFovReadout = document.getElementById('pt-fov-readout');
+  function setPtFov(v){
+    pointEngine.setFov(v);
+    ptFovReadout.textContent = Math.round(pointEngine.state.fov*180/Math.PI)+'°';
+    pointEngine.render();
+    if(splitOn) syncSplitB();
+  }
+  document.getElementById('pt-zoom-in').addEventListener('click', ()=>setPtFov(pointEngine.state.fov-0.12));
+  document.getElementById('pt-zoom-out').addEventListener('click', ()=>setPtFov(pointEngine.state.fov+0.12));
+
+  function selectPoint(id){
+    activePointId = id;
+    renderMapPins();
+    renderGeoPins();
+    const p = points.find(x=>x.id===id);
+    if(!p) return;
+    pointEmpty.classList.add('hidden');
+    pointActive.classList.add('show');
+    pointTitle.textContent = p.name;
+    pointSub.textContent = `${p.epochs.length} 個時期${p.note ? ' · '+p.note : ''}`;
+    renderEpochTabs();
+    if(p.epochs.length){
+      selectEpoch(p.epochs[p.epochs.length-1].id);
+    } else {
+      activeEpochId = null;
+      pointNoEpoch.classList.remove('hidden');
+      pointEngine.canvas.getContext('2d').clearRect(0,0,pointEngine.canvas.width,pointEngine.canvas.height);
+    }
+    setTimeout(()=>{ pointEngine.resize(); pointEngineB.resize(); if(activeEpochId) pointEngine.render(); },30);
+  }
+
+  function epochLabel(e){
+    return e.month ? `${e.year}/${String(e.month).padStart(2,'0')}` : `${e.year}`;
+  }
+
+  /* ---- 編輯 / 刪除點位 ---- */
+  document.getElementById('btn-edit-point').addEventListener('click', ()=>{
+    const p = points.find(x=>x.id===activePointId);
+    if(!p) return;
+    openEditPointModal(p);
+  });
+  document.getElementById('btn-delete-point').addEventListener('click', ()=>{
+    const p = points.find(x=>x.id===activePointId);
+    if(!p) return;
+    if(!confirm(`確定要刪除點位「${p.name}」嗎？此點位下所有時期全景將一併刪除，此動作無法復原。`)) return;
+    const idx = points.findIndex(x=>x.id===p.id);
+    points.splice(idx,1);
+    deletedPointIds.add(p.id);
+    p.epochs.forEach(e=> deletedEpochKeys.add(p.id+'|'+e.id) );
+    if(p.kind==='geo' && geoMarkers[p.id]){ geoMap.removeLayer(geoMarkers[p.id]); delete geoMarkers[p.id]; }
+    renderMapPins(); renderGeoPins();
+    activePointId = null; activeEpochId = null;
+    pointActive.classList.remove('show');
+    pointEmpty.classList.remove('hidden');
+    scheduleSave();
+    showToast('點位已刪除');
+  });
+
+  const modalEditPoint = document.getElementById('modal-edit-point');
+  function openEditPointModal(p){
+    document.getElementById('input-edit-point-name').value = p.name;
+    document.getElementById('input-edit-point-note').value = p.note || '';
+    const coordRow = document.getElementById('edit-point-coord-row');
+    if(p.kind === 'geo'){
+      coordRow.style.display = 'flex';
+      document.getElementById('input-edit-point-lat').value = p.lat.toFixed(6);
+      document.getElementById('input-edit-point-lon').value = p.lon.toFixed(6);
+    } else {
+      coordRow.style.display = 'none';
+    }
+    modalEditPoint.classList.add('show');
+  }
+  document.getElementById('btn-cancel-edit-point').addEventListener('click', ()=>modalEditPoint.classList.remove('show'));
+  modalEditPoint.addEventListener('click', e=>{ if(e.target===modalEditPoint) modalEditPoint.classList.remove('show'); });
+  document.getElementById('btn-confirm-edit-point').addEventListener('click', ()=>{
+    const p = points.find(x=>x.id===activePointId);
+    if(!p) return;
+    const name = document.getElementById('input-edit-point-name').value.trim();
+    if(!name){ showToast('請輸入點位名稱'); return; }
+    p.name = name;
+    p.note = document.getElementById('input-edit-point-note').value.trim();
+    if(p.kind === 'geo'){
+      const lat = parseFloat(document.getElementById('input-edit-point-lat').value);
+      const lon = parseFloat(document.getElementById('input-edit-point-lon').value);
+      if(isNaN(lat) || isNaN(lon)){ showToast('請輸入有效的經緯度數值'); return; }
+      if(lat < -90 || lat > 90 || lon < -180 || lon > 180){ showToast('經緯度數值超出合理範圍'); return; }
+      p.lat = lat; p.lon = lon;
+      renderGeoPins();
+      if(geoMap) geoMap.panTo([lat, lon]);
+    } else {
+      renderMapPins();
+    }
+    pointTitle.textContent = p.name;
+    pointSub.textContent = `${p.epochs.length} 個時期${p.note ? ' · '+p.note : ''}`;
+    modalEditPoint.classList.remove('show');
+    markPointDirty(p.id);
+    scheduleSave();
+    showToast('點位已更新');
+  });
+
+  function renderEpochTabs(){
+    const p = points.find(x=>x.id===activePointId);
+    if(!p) return;
+    const sorted = [...p.epochs].sort((a,b)=> (a.year+String(a.month||'').padStart(2,'0')).localeCompare(b.year+String(b.month||'').padStart(2,'0')));
+    epochTabs.innerHTML = sorted.map(e=>`
+      <div class="epoch-tab ${e.id===activeEpochId?'active':''}" data-id="${e.id}">
+        <span class="dot"></span>${epochLabel(e)}<span class="epoch-del-btn" data-id="${e.id}" title="刪除此時期">×</span>
+      </div>
+    `).join('') + `<div class="epoch-add-tab" id="epoch-tabs-add">+ 時期</div>`;
+    epochTabs.querySelectorAll('.epoch-tab').forEach(el=>{
+      el.addEventListener('click', ()=>selectEpoch(el.dataset.id));
+    });
+    epochTabs.querySelectorAll('.epoch-del-btn').forEach(btn=>{
+      btn.addEventListener('click', e=>{ e.stopPropagation(); deleteEpoch(btn.dataset.id); });
+    });
+    epochTabs.querySelector('#epoch-tabs-add').addEventListener('click', openEpochModal);
+    refreshSplitSelect();
+    const aiBtn = document.getElementById('btn-compare-ai');
+    if(aiBtn) aiBtn.style.display = (p.epochs.length>=2) ? '' : 'none';
+  }
+
+  function selectEpoch(id){
+    activeEpochId = id;
+    const p = points.find(x=>x.id===activePointId);
+    const e = p.epochs.find(x=>x.id===id);
+    if(!e) return;
+    pointNoEpoch.classList.add('hidden');
+    pointEngine.setImage(e.img);
+    setPtFov(Math.PI/2);
+    renderEpochTabs();
+    if(splitOn) syncSplitB();
+  }
+
+  document.getElementById('btn-add-epoch').addEventListener('click', openEpochModal);
+
+  const modalEpoch = document.getElementById('modal-epoch');
+  const uploadZoneEpoch = document.getElementById('upload-zone-epoch');
+  const fileInputEpoch = document.getElementById('file-input-epoch');
+  const uploadPreviewEpoch = document.getElementById('upload-preview-epoch');
+  let pendingEpochDataUrl = null;
+
+  function openEpochModal(){
+    if(!activePointId){ showToast('請先選擇一個點位'); return; }
+    pendingEpochDataUrl=null;
+    uploadPreviewEpoch.style.display='none';
+    document.getElementById('input-epoch-year').value='';
+    document.getElementById('input-epoch-month').value='';
+    document.getElementById('input-epoch-note').value='';
+    modalEpoch.classList.add('show');
+  }
+  setupUploadZone(uploadZoneEpoch, fileInputEpoch, dataUrl=>{
+    pendingEpochDataUrl = dataUrl;
+    uploadPreviewEpoch.style.backgroundImage = `url('${dataUrl}')`;
+    uploadPreviewEpoch.style.display='block';
+  });
+  document.getElementById('btn-cancel-epoch').addEventListener('click', ()=>modalEpoch.classList.remove('show'));
+  modalEpoch.addEventListener('click', e=>{ if(e.target===modalEpoch) modalEpoch.classList.remove('show'); });
+  document.getElementById('btn-confirm-epoch').addEventListener('click', ()=>{
+    if(!pendingEpochDataUrl){ showToast('請先選擇全景圖檔案'); return; }
+    const year = document.getElementById('input-epoch-year').value.trim();
+    if(!year){ showToast('請輸入年份'); return; }
+    const month = document.getElementById('input-epoch-month').value.trim();
+    const note = document.getElementById('input-epoch-note').value.trim();
+    const img = new Image();
+    img.onload = ()=>{
+      const p = points.find(x=>x.id===activePointId);
+      const id = 'ep-'+Date.now();
+      p.epochs.push({ id, year, month, note, img, src:pendingEpochDataUrl, yawOffset:0 });
+      pointSub.textContent = `${p.epochs.length} 個時期${p.note ? ' · '+p.note : ''}`;
+      renderEpochTabs();
+      renderMapPins();
+      renderGeoPins();
+      selectEpoch(id);
+      modalEpoch.classList.remove('show');
+      markPointDirty(p.id);
+      markEpochDirty(p.id, id);
+      scheduleSave();
+      showToast('時期全景已加入');
+    };
+    img.onerror = ()=>showToast('圖片載入失敗');
+    img.src = pendingEpochDataUrl;
+  });
+
+  function deleteEpoch(epochId){
+    const p = points.find(x=>x.id===activePointId);
+    if(!p) return;
+    const idx = p.epochs.findIndex(e=>e.id===epochId);
+    if(idx===-1) return;
+    if(!confirm(`確定要刪除「${epochLabel(p.epochs[idx])}」這個時期的全景嗎？此動作無法復原。`)) return;
+    deletedEpochKeys.add(activePointId+'|'+epochId);
+    p.epochs.splice(idx,1);
+    pointSub.textContent = `${p.epochs.length} 個時期${p.note ? ' · '+p.note : ''}`;
+    renderMapPins(); renderGeoPins();
+    if(activeEpochId===epochId){
+      if(p.epochs.length){
+        selectEpoch(p.epochs[p.epochs.length-1].id);
+      } else {
+        activeEpochId=null;
+        pointNoEpoch.classList.remove('hidden');
+        pointEngine.canvas.getContext('2d').clearRect(0,0,pointEngine.canvas.width,pointEngine.canvas.height);
+        renderEpochTabs();
+      }
+    } else {
+      renderEpochTabs();
+    }
+    markPointDirty(activePointId);
+    scheduleSave();
+    showToast('時期全景已刪除');
+  }
+
+  /* ---- 左右滑桿比對 ---- */
+  const splitSwitch = document.getElementById('split-switch');
+  const splitSelectB = document.getElementById('split-select-b');
+  const splitLine = document.getElementById('split-line');
+  const canvasB = document.getElementById('point-canvas-b');
+  const badgeL = document.getElementById('epoch-badge-left');
+  const badgeR = document.getElementById('epoch-badge-right');
+  const btnCalibrate = document.getElementById('btn-calibrate');
+  const calibrateBanner = document.getElementById('calibrate-banner');
+  const calibBadge = document.getElementById('calib-badge');
+  let splitOn = false;
+  let splitRatio = 0.5;
+  let calibrating = false;
+
+  splitSwitch.addEventListener('click', ()=>{
+    splitOn = !splitOn;
+    splitSwitch.classList.toggle('on', splitOn);
+    splitSelectB.style.display = splitOn ? '' : 'none';
+    canvasB.style.display = splitOn ? '' : 'none';
+    splitLine.classList.toggle('show', splitOn);
+    badgeL.classList.toggle('show', splitOn);
+    badgeR.classList.toggle('show', splitOn);
+    btnCalibrate.style.display = splitOn ? '' : 'none';
+    if(!splitOn) exitCalibrateMode();
+    if(splitOn){ refreshSplitSelect(); syncSplitB(); applySplitClip(); }
+  });
+
+  function refreshSplitSelect(){
+    const p = points.find(x=>x.id===activePointId);
+    if(!p) return;
+    const sorted = [...p.epochs].sort((a,b)=> (a.year+String(a.month||'').padStart(2,'0')).localeCompare(b.year+String(b.month||'').padStart(2,'0')));
+    splitSelectB.innerHTML = sorted.map(e=>`<option value="${e.id}" ${e.id===activeEpochId?'':''}>${epochLabel(e)}</option>`).join('');
+    // 預設選與目前不同的另一個時期
+    const other = sorted.find(e=>e.id!==activeEpochId) || sorted[0];
+    if(other) splitSelectB.value = other.id;
+  }
+  splitSelectB.addEventListener('change', syncSplitB);
+
+  function getEpochB(){
+    const p = points.find(x=>x.id===activePointId);
+    if(!p) return null;
+    return p.epochs.find(x=>x.id===splitSelectB.value);
+  }
+
+  function syncSplitB(){
+    const p = points.find(x=>x.id===activePointId);
+    if(!p || !splitOn) return;
+    const eB = getEpochB();
+    const eA = p.epochs.find(x=>x.id===activeEpochId);
+    if(eA) badgeL.textContent = epochLabel(eA);
+    if(eB){
+      pointEngineB.setImage(eB.img);
+      pointEngineB.state.yaw = pointEngine.state.yaw + (eB.yawOffset||0);
+      pointEngineB.state.pitch = pointEngine.state.pitch;
+      pointEngineB.state.fov = pointEngine.state.fov;
+      pointEngineB.resize();
+      pointEngineB.render();
+      badgeR.textContent = epochLabel(eB);
+      calibBadge.textContent = `偏移量 ${Math.round((eB.yawOffset||0)*180/Math.PI)}°`;
+    }
+  }
+
+  // 同步 A/B 視角：A 拖曳/縮放時，B 跟著同步（並套用 B 自己的方位偏移量）
+  pointEngine.bindDrag({ onChange: ()=>{
+    ptFovReadout.textContent = Math.round(pointEngine.state.fov*180/Math.PI)+'°';
+    if(splitOn && !calibrating) syncSplitB();
+  }});
+
+  /* ---- 校準模式：拖曳 B 畫面單獨調整其方位偏移量 ---- */
+  btnCalibrate.addEventListener('click', ()=>{
+    if(!getEpochB()){ showToast('請先選擇要比對的時期'); return; }
+    calibrating = !calibrating;
+    btnCalibrate.classList.toggle('active', calibrating);
+    pointStage.classList.toggle('calibrating', calibrating);
+    calibrateBanner.classList.toggle('show', calibrating);
+    calibBadge.classList.toggle('show', calibrating);
+  });
+  document.getElementById('btn-finish-calibrate').addEventListener('click', exitCalibrateMode);
+  function exitCalibrateMode(){
+    calibrating = false;
+    btnCalibrate.classList.remove('active');
+    pointStage.classList.remove('calibrating');
+    calibrateBanner.classList.remove('show');
+  }
+
+  let calibDragging = false, calibLastX = 0;
+  canvasB.addEventListener('mousedown', e=>{
+    if(!calibrating) return;
+    calibDragging = true; calibLastX = e.clientX;
+    e.stopPropagation();
+  });
+  window.addEventListener('mousemove', e=>{
+    if(!calibDragging || !calibrating) return;
+    const dx = e.clientX - calibLastX;
+    calibLastX = e.clientX;
+    const eB = getEpochB();
+    if(!eB) return;
+    eB.yawOffset = (eB.yawOffset||0) - dx*0.0028*pointEngineB.state.fov;
+    pointEngineB.state.yaw = pointEngine.state.yaw + eB.yawOffset;
+    pointEngineB.render();
+    calibBadge.textContent = `偏移量 ${Math.round(eB.yawOffset*180/Math.PI)}°`;
+  });
+  window.addEventListener('mouseup', ()=>{ if(calibDragging && calibrating){ const eB=getEpochB(); if(eB) markEpochDirty(activePointId, eB.id); scheduleSave(); } calibDragging=false; });
+  canvasB.addEventListener('touchstart', e=>{
+    if(!calibrating) return;
+    calibDragging = true; calibLastX = e.touches[0].clientX;
+    e.stopPropagation();
+  }, {passive:true});
+  window.addEventListener('touchmove', e=>{
+    if(!calibDragging || !calibrating) return;
+    const x = e.touches[0].clientX;
+    const dx = x - calibLastX;
+    calibLastX = x;
+    const eB = getEpochB();
+    if(!eB) return;
+    eB.yawOffset = (eB.yawOffset||0) - dx*0.0028*pointEngineB.state.fov;
+    pointEngineB.state.yaw = pointEngine.state.yaw + eB.yawOffset;
+    pointEngineB.render();
+    calibBadge.textContent = `偏移量 ${Math.round(eB.yawOffset*180/Math.PI)}°`;
+  }, {passive:true});
+  window.addEventListener('touchend', ()=>{ if(calibDragging && calibrating){ const eB=getEpochB(); if(eB) markEpochDirty(activePointId, eB.id); scheduleSave(); } calibDragging=false; });
+
+  // 滑桿拖曳
+  let splitDragging = false;
+  const splitHandle = document.getElementById('split-handle');
+  splitHandle.addEventListener('mousedown', e=>{ e.stopPropagation(); splitDragging=true; });
+  window.addEventListener('mousemove', e=>{
+    if(!splitDragging) return;
+    const rect = pointStage.getBoundingClientRect();
+    splitRatio = Math.max(0.04, Math.min(0.96, (e.clientX-rect.left)/rect.width));
+    applySplitClip();
+  });
+  window.addEventListener('mouseup', ()=>splitDragging=false);
+  splitHandle.addEventListener('touchstart', e=>{ e.stopPropagation(); splitDragging=true; },{passive:true});
+  window.addEventListener('touchmove', e=>{
+    if(!splitDragging) return;
+    const rect = pointStage.getBoundingClientRect();
+    const x = e.touches[0].clientX;
+    splitRatio = Math.max(0.04, Math.min(0.96, (x-rect.left)/rect.width));
+    applySplitClip();
+  },{passive:true});
+  window.addEventListener('touchend', ()=>splitDragging=false);
+
+  function applySplitClip(){
+    const pct = splitRatio*100;
+    splitLine.style.left = pct+'%';
+    canvasB.style.clipPath = `inset(0 0 0 ${pct}%)`;
+    pointEngine.canvas.style.clipPath = splitOn ? `inset(0 ${100-pct}% 0 0)` : '';
+  }
+
+  /* =========================================================
+     PART C：資料持久化（自動儲存 / 匯出匯入備份 / 匯出分享版）
+  ========================================================= */
+  const STORAGE_PREFIX = 'panotour';
+  // window.storage 僅在 Claude.ai 的 artifact 預覽環境中提供；
+  // 直接以瀏覽器開啟下載後的檔案（file:// 或自行架設的網頁空間）時不存在，
+  // 此時系統仍須完整可用，僅自動儲存功能會停用（資料只存在於本次瀏覽期間，建議改用「匯出備份」）。
+  const STORAGE_AVAILABLE = (typeof window.storage !== 'undefined' && window.storage !== null);
+
+  // ---- 序列化：把記憶體中的資料（含 HTMLImageElement）轉成可存檔的純資料 ----
+  function serializeState(){
+    return {
+      version: 1,
+      savedAt: new Date().toISOString(),
+      scenes: scenes.map(s=>({
+        id:s.id, name:s.name, note:s.note, src:s.src,
+        hotspots: s.hotspots.map(h=>({ id:h.id, yaw:h.yaw, pitch:h.pitch, targetId:h.targetId, label:h.label }))
+      })),
+      basemap: basemap ? { src:basemap.src, name:basemap.name } : null,
+      points: points.map(p=>{
+        const base = { id:p.id, kind:p.kind, name:p.name, note:p.note,
+          epochs: p.epochs.map(e=>({ id:e.id, year:e.year, month:e.month, note:e.note, src:e.src, yawOffset:e.yawOffset||0 })) };
+        if(p.kind==='geo'){ base.lat=p.lat; base.lon=p.lon; }
+        else { base.x=p.x; base.y=p.y; }
+        return base;
+      })
+    };
+  }
+
+  // ---- 還原：把存檔的純資料還原成記憶體中可用的物件（重建 Image）----
+  function loadImageAsync(src){
+    return new Promise((resolve)=>{
+      if(!src){ resolve(null); return; }
+      const img = new Image();
+      img.onload = ()=>resolve(img);
+      img.onerror = ()=>resolve(null);
+      img.src = src;
+    });
+  }
+
+  async function restoreState(data){
+    if(!data) return;
+    // 場景
+    scenes = [];
+    for(const s of (data.scenes||[])){
+      const img = await loadImageAsync(s.src);
+      if(!img) continue;
+      scenes.push({ id:s.id, name:s.name, note:s.note, img, src:s.src, hotspots:s.hotspots||[] });
+    }
+    renderSceneList();
+    if(scenes.length){ loadScene(scenes[0].id); }
+
+    // 底圖
+    if(data.basemap && data.basemap.src){
+      const img = await loadImageAsync(data.basemap.src);
+      if(img){
+        basemap = { src:data.basemap.src, img, name:data.basemap.name };
+        mapSub.textContent = basemap.name + ` · ${img.width}×${img.height}px`;
+        mapNoBase.classList.add('hidden');
+        mapContent.innerHTML = `<img src="${basemap.src}" draggable="false">`;
+        setTimeout(()=>fitMapToWrap(), 50);
+      }
+    }
+
+    // 點位
+    points = [];
+    for(const p of (data.points||[])){
+      const epochs = [];
+      for(const e of (p.epochs||[])){
+        const img = await loadImageAsync(e.src);
+        if(!img) continue;
+        epochs.push({ id:e.id, year:e.year, month:e.month, note:e.note, img, src:e.src, yawOffset:e.yawOffset||0 });
+      }
+      const restored = { id:p.id, kind:p.kind, name:p.name, note:p.note, epochs };
+      if(p.kind==='geo'){ restored.lat=p.lat; restored.lon=p.lon; }
+      else { restored.x=p.x; restored.y=p.y; }
+      points.push(restored);
+    }
+    renderMapPins();
+    if(points.some(p=>p.kind==='geo')){
+      initGeoMap();
+      setTimeout(()=>renderGeoPins(), 60);
+    }
+  }
+
+  /* ---- 分散式儲存：避免單一 key 超過 5MB 限制 ----
+     架構：
+     - panotour:index           → 輕量索引（場景/點位/時期的 ID 與排序資訊，不含圖片）
+     - panotour:scene:{id}      → 單一場景完整資料（含圖片 base64）
+     - panotour:basemap         → 底圖完整資料（含圖片 base64）
+     - panotour:point:{id}      → 單一點位的中繼資料（名稱/座標/備註，不含圖片）
+     - panotour:epoch:{ptId}:{epId} → 單一時期全景完整資料（含圖片 base64）
+  ---- */
+  function buildIndex(){
+    return {
+      version: 2,
+      savedAt: new Date().toISOString(),
+      sceneIds: scenes.map(s=>s.id),
+      hasBasemap: !!basemap,
+      points: points.map(p=>({
+        id:p.id, kind:p.kind, name:p.name, note:p.note,
+        x:p.x, y:p.y, lat:p.lat, lon:p.lon,
+        epochIds: p.epochs.map(e=>e.id)
+      }))
+    };
+  }
+
+  const saveDot = document.getElementById('save-dot');
+  const saveStatusText = document.getElementById('save-status-text');
+  let saveTimer = null;
+  let saveGeneration = 0;
+  let dirtyScenes = new Set();   // 待存的場景 id（'__all__' 代表索引本身需要更新）
+  let dirtyEpochs = new Set();   // 待存的 "pointId|epochId"
+  let dirtyPoints = new Set();   // 待存的點位中繼資料
+  let basemapDirty = false;
+  let deletedSceneIds = new Set();
+  let deletedPointIds = new Set();
+  let deletedEpochKeys = new Set(); // "pointId|epochId"
+
+  function markSceneDirty(id){ dirtyScenes.add(id); }
+  function markPointDirty(id){ dirtyPoints.add(id); }
+  function markEpochDirty(pointId, epochId){ dirtyEpochs.add(pointId+'|'+epochId); }
+  function markBasemapDirty(){ basemapDirty = true; }
+
+  function scheduleSave(){
+    if(!STORAGE_AVAILABLE){
+      // 不支援持久化儲存的環境：清空待存標記，避免記憶體無謂累積，並提示使用者改用匯出備份
+      dirtyScenes.clear(); dirtyPoints.clear(); dirtyEpochs.clear();
+      deletedSceneIds.clear(); deletedPointIds.clear(); deletedEpochKeys.clear();
+      basemapDirty = false;
+      saveDot.classList.remove('saving');
+      saveStatusText.textContent = '本機瀏覽（未連線儲存）';
+      return;
+    }
+    saveDot.classList.add('saving');
+    saveStatusText.textContent = '儲存中…';
+    clearTimeout(saveTimer);
+    saveTimer = setTimeout(doSave, 900);
+  }
+
+  async function doSave(){
+    const myGen = ++saveGeneration;
+    try{
+      const tasks = [];
+
+      for(const id of dirtyScenes){
+        const s = scenes.find(x=>x.id===id);
+        if(s){
+          tasks.push(window.storage.set(STORAGE_PREFIX+':scene:'+id, JSON.stringify({
+            id:s.id, name:s.name, note:s.note, src:s.src, hotspots:s.hotspots
+          }), false));
+        }
+      }
+      for(const id of deletedSceneIds){
+        tasks.push(window.storage.delete(STORAGE_PREFIX+':scene:'+id, false).catch(()=>{}));
+      }
+      if(basemapDirty){
+        if(basemap){
+          tasks.push(window.storage.set(STORAGE_PREFIX+':basemap', JSON.stringify({ src:basemap.src, name:basemap.name }), false));
+        } else {
+          tasks.push(window.storage.delete(STORAGE_PREFIX+':basemap', false).catch(()=>{}));
+        }
+      }
+      for(const id of dirtyPoints){
+        const p = points.find(x=>x.id===id);
+        if(p){
+          const meta = { id:p.id, kind:p.kind, name:p.name, note:p.note };
+          if(p.kind==='geo'){ meta.lat=p.lat; meta.lon=p.lon; } else { meta.x=p.x; meta.y=p.y; }
+          tasks.push(window.storage.set(STORAGE_PREFIX+':point:'+id, JSON.stringify(meta), false));
+        }
+      }
+      for(const id of deletedPointIds){
+        tasks.push(window.storage.delete(STORAGE_PREFIX+':point:'+id, false).catch(()=>{}));
+      }
+      for(const key of dirtyEpochs){
+        const [pointId, epochId] = key.split('|');
+        const p = points.find(x=>x.id===pointId);
+        const e = p && p.epochs.find(x=>x.id===epochId);
+        if(e){
+          tasks.push(window.storage.set(STORAGE_PREFIX+':epoch:'+key, JSON.stringify({
+            id:e.id, year:e.year, month:e.month, note:e.note, src:e.src, yawOffset:e.yawOffset||0
+          }), false));
+        }
+      }
+      for(const key of deletedEpochKeys){
+        tasks.push(window.storage.delete(STORAGE_PREFIX+':epoch:'+key, false).catch(()=>{}));
+      }
+
+      // 索引一律更新（輕量，每次存檔都重寫）
+      tasks.push(window.storage.set(STORAGE_PREFIX+':index', JSON.stringify(buildIndex()), false));
+
+      await Promise.all(tasks);
+
+      dirtyScenes.clear(); dirtyPoints.clear(); dirtyEpochs.clear();
+      deletedSceneIds.clear(); deletedPointIds.clear(); deletedEpochKeys.clear();
+      basemapDirty = false;
+
+      if(myGen === saveGeneration){
+        saveDot.classList.remove('saving');
+        saveStatusText.textContent = '已同步';
+      }
+    } catch(err){
+      console.error('儲存失敗', err);
+      if(myGen === saveGeneration){
+        saveDot.classList.remove('saving');
+        saveStatusText.textContent = '儲存失敗（單張圖片可能超過 5MB）';
+      }
+    }
+  }
+
+  /* ---- 全量覆寫儲存：用於匯入備份／清空資料，先清空舊 key 再寫入完整新狀態 ---- */
+  async function fullOverwriteSave(){
+    if(!STORAGE_AVAILABLE){
+      saveDot.classList.remove('saving');
+      saveStatusText.textContent = '本機瀏覽（未連線儲存）';
+      return;
+    }
+    saveDot.classList.add('saving');
+    saveStatusText.textContent = '儲存中…';
+    try{
+      // 取得舊索引以清除舊資料殘留的 key
+      let oldIdx = null;
+      try{
+        const r = await window.storage.get(STORAGE_PREFIX+':index', false);
+        if(r && r.value) oldIdx = JSON.parse(r.value);
+      }catch(err){}
+
+      const delTasks = [];
+      if(oldIdx){
+        for(const sid of (oldIdx.sceneIds||[])) delTasks.push(window.storage.delete(STORAGE_PREFIX+':scene:'+sid, false).catch(()=>{}));
+        if(oldIdx.hasBasemap) delTasks.push(window.storage.delete(STORAGE_PREFIX+':basemap', false).catch(()=>{}));
+        for(const p of (oldIdx.points||[])){
+          delTasks.push(window.storage.delete(STORAGE_PREFIX+':point:'+p.id, false).catch(()=>{}));
+          for(const eid of (p.epochIds||[])) delTasks.push(window.storage.delete(STORAGE_PREFIX+':epoch:'+p.id+'|'+eid, false).catch(()=>{}));
+        }
+      }
+      await Promise.all(delTasks);
+
+      const writeTasks = [];
+      for(const s of scenes){
+        writeTasks.push(window.storage.set(STORAGE_PREFIX+':scene:'+s.id, JSON.stringify({
+          id:s.id, name:s.name, note:s.note, src:s.src, hotspots:s.hotspots
+        }), false));
+      }
+      if(basemap){
+        writeTasks.push(window.storage.set(STORAGE_PREFIX+':basemap', JSON.stringify({ src:basemap.src, name:basemap.name }), false));
+      }
+      for(const p of points){
+        const meta = { id:p.id, kind:p.kind, name:p.name, note:p.note };
+        if(p.kind==='geo'){ meta.lat=p.lat; meta.lon=p.lon; } else { meta.x=p.x; meta.y=p.y; }
+        writeTasks.push(window.storage.set(STORAGE_PREFIX+':point:'+p.id, JSON.stringify(meta), false));
+        for(const e of p.epochs){
+          writeTasks.push(window.storage.set(STORAGE_PREFIX+':epoch:'+p.id+'|'+e.id, JSON.stringify({
+            id:e.id, year:e.year, month:e.month, note:e.note, src:e.src, yawOffset:e.yawOffset||0
+          }), false));
+        }
+      }
+      writeTasks.push(window.storage.set(STORAGE_PREFIX+':index', JSON.stringify(buildIndex()), false));
+      await Promise.all(writeTasks);
+
+      dirtyScenes.clear(); dirtyPoints.clear(); dirtyEpochs.clear();
+      deletedSceneIds.clear(); deletedPointIds.clear(); deletedEpochKeys.clear();
+      basemapDirty = false;
+
+      saveDot.classList.remove('saving');
+      saveStatusText.textContent = '已同步';
+    } catch(err){
+      console.error('全量儲存失敗', err);
+      saveDot.classList.remove('saving');
+      saveStatusText.textContent = '儲存失敗（單張圖片可能超過 5MB）';
+    }
+  }
+
+  async function loadFromStorage(){
+    if(!STORAGE_AVAILABLE){
+      saveStatusText.textContent = '本機瀏覽（未連線儲存）';
+      return;
+    }
+    const overlay = document.getElementById('loading-overlay');
+    overlay.classList.remove('hidden');
+    try{
+      const idxResult = await window.storage.get(STORAGE_PREFIX + ':index', false);
+      if(!idxResult || !idxResult.value) return;
+      const idx = JSON.parse(idxResult.value);
+
+      // 還原場景
+      scenes = [];
+      for(const sid of (idx.sceneIds||[])){
+        try{
+          const r = await window.storage.get(STORAGE_PREFIX+':scene:'+sid, false);
+          if(!r || !r.value) continue;
+          const s = JSON.parse(r.value);
+          const img = await loadImageAsync(s.src);
+          if(!img) continue;
+          scenes.push({ id:s.id, name:s.name, note:s.note, img, src:s.src, hotspots:s.hotspots||[] });
+        }catch(err){ /* 單一場景讀取失敗不影響其他場景 */ }
+      }
+      renderSceneList();
+      if(scenes.length){ loadScene(scenes[0].id); }
+
+      // 還原底圖
+      if(idx.hasBasemap){
+        try{
+          const r = await window.storage.get(STORAGE_PREFIX+':basemap', false);
+          if(r && r.value){
+            const b = JSON.parse(r.value);
+            const img = await loadImageAsync(b.src);
+            if(img){
+              basemap = { src:b.src, img, name:b.name };
+              mapSub.textContent = basemap.name + ` · ${img.width}×${img.height}px`;
+              mapNoBase.classList.add('hidden');
+              mapContent.innerHTML = `<img src="${basemap.src}" draggable="false">`;
+              setTimeout(()=>fitMapToWrap(), 50);
+            }
+          }
+        }catch(err){ /* 底圖讀取失敗不影響其餘資料 */ }
+      }
+
+      // 還原點位
+      points = [];
+      for(const pIdx of (idx.points||[])){
+        try{
+          const r = await window.storage.get(STORAGE_PREFIX+':point:'+pIdx.id, false);
+          if(!r || !r.value) continue;
+          const pMeta = JSON.parse(r.value);
+          const epochs = [];
+          for(const eid of (pIdx.epochIds||[])){
+            try{
+              const er = await window.storage.get(STORAGE_PREFIX+':epoch:'+pIdx.id+'|'+eid, false);
+              if(!er || !er.value) continue;
+              const e = JSON.parse(er.value);
+              const img = await loadImageAsync(e.src);
+              if(!img) continue;
+              epochs.push({ id:e.id, year:e.year, month:e.month, note:e.note, img, src:e.src, yawOffset:e.yawOffset||0 });
+            }catch(err){ /* 單一時期讀取失敗不影響其他時期 */ }
+          }
+          const restored = { id:pMeta.id, kind:pMeta.kind, name:pMeta.name, note:pMeta.note, epochs };
+          if(pMeta.kind==='geo'){ restored.lat=pMeta.lat; restored.lon=pMeta.lon; }
+          else { restored.x=pMeta.x; restored.y=pMeta.y; }
+          points.push(restored);
+        }catch(err){ /* 單一點位讀取失敗不影響其他點位 */ }
+      }
+      renderMapPins();
+      if(points.some(p=>p.kind==='geo')){
+        initGeoMap();
+        setTimeout(()=>renderGeoPins(), 60);
+      }
+
+      if(scenes.length || points.length || basemap){
+        showToast('已載入先前儲存的資料');
+      }
+    } catch(err){
+      // 沒有先前資料是正常情況，靜默處理
+    } finally {
+      overlay.classList.add('hidden');
+    }
+  }
+
+  // 在所有會異動資料的操作後排程儲存：用 MutationObserver 太複雜，改為在關鍵操作點直接呼叫
+  // 這裡用簡單輪詢偵測資料變動時機點較不可靠，改為包裝現有函式入口
+
+  /* ---- 匯出備份 JSON ---- */
+  document.getElementById('btn-export-backup').addEventListener('click', ()=>{
+    const data = serializeState();
+    const blob = new Blob([JSON.stringify(data)], { type:'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    const stamp = new Date().toISOString().slice(0,10);
+    a.href = url; a.download = `panorama-backup-${stamp}.json`;
+    document.body.appendChild(a); a.click(); document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+    closeDataMenu();
+    showToast('備份已下載');
+  });
+
+  /* ---- 匯入備份 JSON ---- */
+  document.getElementById('btn-import-backup').addEventListener('click', ()=>{
+    document.getElementById('file-input-import').click();
+    closeDataMenu();
+  });
+  document.getElementById('file-input-import').addEventListener('change', async (e)=>{
+    const file = e.target.files[0];
+    if(!file) return;
+    try{
+      const text = await file.text();
+      const data = JSON.parse(text);
+      if(!confirm('匯入備份將覆蓋目前系統中的所有資料，確定要繼續嗎？')) { e.target.value=''; return; }
+      showToast('匯入中，請稍候…');
+      await restoreState(data);
+      await fullOverwriteSave();
+      showToast('備份已匯入');
+    } catch(err){
+      showToast('匯入失敗，請確認檔案格式正確');
+    }
+    e.target.value = '';
+  });
+
+  /* ---- 清空所有資料 ---- */
+  document.getElementById('btn-clear-all').addEventListener('click', async ()=>{
+    closeDataMenu();
+    if(!confirm('確定要清空所有場景、點位與全景資料嗎？此動作無法復原。')) return;
+    scenes = []; points = []; basemap = null;
+    activeSceneId = null; activePointId = null; activeEpochId = null;
+    renderSceneList();
+    sceneTitleEl.textContent='尚未載入場景'; sceneEyebrowEl.textContent='--'; sceneCoordsEl.textContent='LAT -- / LON --';
+    emptyStage.classList.remove('hidden');
+    tourEngine.canvas.getContext('2d').clearRect(0,0,tourEngine.canvas.width,tourEngine.canvas.height);
+    mapSub.textContent = '尚未設定底圖';
+    mapNoBase.classList.remove('hidden');
+    mapContent.innerHTML = '';
+    renderMapPins();
+    if(geoMap) renderGeoPins();
+    pointActive.classList.remove('show');
+    pointEmpty.classList.remove('hidden');
+    await fullOverwriteSave();
+    showToast('所有資料已清空');
+  });
+
+  /* ---- 資料管理選單開關 ---- */
+  const dataMenu = document.getElementById('data-menu');
+  document.getElementById('btn-data-menu').addEventListener('click', e=>{
+    e.stopPropagation();
+    dataMenu.classList.toggle('show');
+  });
+  function closeDataMenu(){ dataMenu.classList.remove('show'); }
+  window.addEventListener('click', e=>{
+    if(!e.target.closest('.data-menu-wrap')) closeDataMenu();
+  });
+
+  /* ---- 匯出唯讀分享版網頁 ---- */
+  document.getElementById('btn-export-share').addEventListener('click', ()=>{
+    closeDataMenu();
+    const data = serializeState();
+    const html = buildShareHtml(data);
+    const blob = new Blob([html], { type:'text/html' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    const stamp = new Date().toISOString().slice(0,10);
+    a.href = url; a.download = `panorama-share-${stamp}.html`;
+    document.body.appendChild(a); a.click(); document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+    showToast('分享版網頁已下載，上傳到網頁空間後即可分享網址');
+  });
+
+  /* ---- 分享版內容常數（CSS / Body / JS）---- */
+  const SHARE_CSS = ":root{\n  --bg-deep:#15181c; --bg-panel:#1d2126; --bg-panel-raised:#262b31;\n  --line:#363c44; --line-soft:#2a2f36; --text-hi:#f0ede6; --text-mid:#9aa0a8; --text-low:#5e646c;\n  --accent:#e8743b; --accent-dim:#7a4326; --accent-glow:rgba(232,116,59,0.35); --ok:#5fa884;\n  --mono:'JetBrains Mono','SFMono-Regular',Consolas,monospace;\n  --sans:-apple-system,BlinkMacSystemFont,'Segoe UI','PingFang TC','Microsoft JhengHei',sans-serif;\n}\n*{box-sizing:border-box; -webkit-tap-highlight-color:transparent;}\nhtml,body{ margin:0; padding:0; height:100%; background:var(--bg-deep); color:var(--text-hi); font-family:var(--sans); overflow:hidden; }\n#app{ position:relative; width:100vw; height:100vh; display:flex; }\n\n#mode-switch{\n  position:absolute; top:18px; left:50%; transform:translateX(-50%); z-index:50;\n  display:flex; background:rgba(29,33,38,0.92); border:1px solid var(--line); border-radius:9px; padding:3px; backdrop-filter:blur(8px); gap:2px;\n}\n.mode-btn{ font-family:var(--sans); font-size:12.5px; font-weight:600; padding:7px 16px; border-radius:6px; cursor:pointer; color:var(--text-mid); display:flex; align-items:center; gap:6px; }\n.mode-btn svg{ width:14px; height:14px; }\n.mode-btn.active{ background:var(--accent); color:#1a1208; }\n.mode-btn:not(.active):hover{ color:var(--text-hi); }\n\n#readonly-badge{\n  position:absolute; top:18px; right:18px; z-index:60; font-family:var(--mono); font-size:10px;\n  background:rgba(29,33,38,0.85); border:1px solid var(--line); color:var(--text-low); padding:6px 11px; border-radius:7px; backdrop-filter:blur(6px);\n}\n\n#sidebar{ width:280px; min-width:280px; height:100%; background:var(--bg-panel); border-right:1px solid var(--line); display:flex; flex-direction:column; z-index:30; transition:transform .25s ease; }\n#sidebar.collapsed{ transform:translateX(-280px); }\n.sb-header{ padding:18px 18px 14px; border-bottom:1px solid var(--line-soft); }\n.sb-eyebrow{ font-family:var(--mono); font-size:10px; letter-spacing:.18em; color:var(--accent); text-transform:uppercase; margin:0 0 4px; }\n.sb-title{ font-size:16px; font-weight:600; margin:0; color:var(--text-hi); }\n.sb-sub{ font-family:var(--mono); font-size:11px; color:var(--text-low); margin-top:6px; }\n#scene-list{ flex:1; overflow-y:auto; padding:10px 10px 20px; }\n#scene-list::-webkit-scrollbar{ width:6px; }\n#scene-list::-webkit-scrollbar-thumb{ background:var(--line); border-radius:3px; }\n.scene-card{ position:relative; display:flex; align-items:center; gap:10px; padding:9px 10px; border-radius:8px; margin-bottom:6px; cursor:pointer; border:1px solid transparent; }\n.scene-card:hover{ background:var(--bg-panel-raised); }\n.scene-card.active{ background:rgba(232,116,59,0.1); border-color:var(--accent-dim); }\n.scene-idx{ font-family:var(--mono); font-size:10px; color:var(--text-low); width:20px; flex-shrink:0; }\n.scene-card.active .scene-idx{ color:var(--accent); }\n.scene-thumb{ width:46px; height:30px; border-radius:4px; background:var(--bg-deep) center/cover no-repeat; flex-shrink:0; border:1px solid var(--line-soft); }\n.scene-meta{ flex:1; min-width:0; }\n.scene-name{ font-size:13px; font-weight:500; color:var(--text-hi); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }\n.scene-tag{ font-family:var(--mono); font-size:10px; color:var(--text-low); margin-top:1px; }\n.sb-empty{ padding:30px 18px; text-align:center; color:var(--text-low); font-size:12.5px; line-height:1.7; }\n\n#sidebar-toggle{ position:absolute; top:18px; left:18px; z-index:40; width:34px; height:34px; border-radius:7px; background:var(--bg-panel); border:1px solid var(--line); display:flex; align-items:center; justify-content:center; cursor:pointer; color:var(--text-hi); }\n#sidebar-toggle:hover{ background:var(--bg-panel-raised); }\n#sidebar-toggle svg{ width:16px; height:16px; }\n\n#stage-wrap{ flex:1; position:relative; height:100%; }\n#stage{ position:relative; width:100%; height:100%; overflow:hidden; background:#0c0e10; cursor:grab; }\n#stage.dragging{ cursor:grabbing; }\n#pano-canvas{ position:absolute; inset:0; }\n#topbar{ position:absolute; top:0; left:0; right:0; padding:18px 24px 18px 64px; display:flex; justify-content:space-between; align-items:flex-start; background:linear-gradient(180deg, rgba(12,14,16,0.7), transparent); z-index:20; pointer-events:none; }\n.stage-title-wrap{ display:flex; flex-direction:column; gap:3px; }\n.stage-eyebrow{ font-family:var(--mono); font-size:10px; letter-spacing:.16em; color:var(--accent); text-transform:uppercase; }\n.stage-title{ font-size:18px; font-weight:600; color:var(--text-hi); }\n.stage-coords{ font-family:var(--mono); font-size:10.5px; color:var(--text-mid); }\n.icon-btn{ width:36px; height:36px; border-radius:8px; background:rgba(29,33,38,0.85); border:1px solid var(--line); backdrop-filter:blur(6px); display:flex; align-items:center; justify-content:center; cursor:pointer; color:var(--text-hi); pointer-events:auto; }\n.icon-btn:hover{ border-color:var(--accent-dim); color:var(--accent); }\n.icon-btn svg{ width:17px; height:17px; }\n#bottombar{ position:absolute; bottom:18px; right:24px; z-index:20; display:flex; align-items:center; gap:10px; }\n.zoom-group{ display:flex; align-items:center; background:rgba(29,33,38,0.85); border:1px solid var(--line); border-radius:8px; backdrop-filter:blur(6px); overflow:hidden; }\n.zoom-btn{ width:34px; height:34px; display:flex; align-items:center; justify-content:center; cursor:pointer; color:var(--text-hi); }\n.zoom-btn:hover{ background:var(--bg-panel-raised); color:var(--accent); }\n.zoom-divider{ width:1px; height:18px; background:var(--line); }\n.fov-readout{ font-family:var(--mono); font-size:10.5px; color:var(--text-mid); padding:0 10px; min-width:46px; text-align:center; }\n#empty-stage{ position:absolute; inset:0; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:18px; text-align:center; padding:40px; }\n#empty-stage.hidden{ display:none; }\n.empty-icon{ width:64px; height:64px; border-radius:14px; border:1px solid var(--line); background:var(--bg-panel); display:flex; align-items:center; justify-content:center; color:var(--accent); }\n.empty-icon svg{ width:28px; height:28px; }\n.empty-title{ font-size:17px; font-weight:600; }\n.empty-sub{ font-size:13px; color:var(--text-mid); max-width:340px; line-height:1.7; }\n\n.hotspot{ position:absolute; width:38px; height:38px; margin:-19px 0 0 -19px; cursor:pointer; z-index:15; display:flex; align-items:center; justify-content:center; }\n.hotspot-ring{ position:absolute; inset:0; border-radius:50%; border:1.5px solid var(--accent); animation:ring-pulse 2.2s ease-out infinite; }\n@keyframes ring-pulse{ 0%{ transform:scale(0.5); opacity:.9; } 70%{ transform:scale(1.5); opacity:0; } 100%{ opacity:0; } }\n.hotspot-core{ width:14px; height:14px; border-radius:50%; background:var(--accent); border:2px solid #1a1208; box-shadow:0 0 0 2px var(--accent), 0 0 14px var(--accent-glow); position:relative; z-index:2; }\n.hotspot-label{ position:absolute; top:44px; left:50%; transform:translateX(-50%); font-family:var(--mono); font-size:10.5px; white-space:nowrap; color:var(--text-hi); background:rgba(20,22,25,0.9); border:1px solid var(--line); padding:3px 8px; border-radius:5px; opacity:0; pointer-events:none; transition:opacity .15s; backdrop-filter:blur(4px); }\n.hotspot:hover .hotspot-label{ opacity:1; }\n\n#compare-view{ position:absolute; inset:0; display:none; }\n#compare-view.show{ display:flex; }\n#map-panel{ width:46%; min-width:340px; height:100%; background:var(--bg-deep); border-right:1px solid var(--line); position:relative; display:flex; flex-direction:column; }\n#map-header{ padding:64px 20px 14px; border-bottom:1px solid var(--line-soft); background:var(--bg-panel); display:flex; justify-content:space-between; align-items:flex-end; gap:10px; }\n#map-header .ttl{ font-size:14px; font-weight:700; }\n#map-header .sub{ font-family:var(--mono); font-size:10.5px; color:var(--text-low); margin-top:3px; }\n#map-source-switch{ display:flex; background:var(--bg-deep); border:1px solid var(--line); border-radius:7px; padding:2px; gap:2px; }\n.map-src-btn{ font-family:var(--mono); font-size:10.5px; font-weight:700; padding:6px 10px; border-radius:5px; cursor:pointer; color:var(--text-mid); white-space:nowrap; }\n.map-src-btn.active{ background:var(--accent); color:#1a1208; }\n.map-src-btn:not(.active):hover{ color:var(--text-hi); }\n\n#map-canvas-wrap{ display:none; flex:1; position:relative; overflow:hidden; background:repeating-linear-gradient(0deg,#1a1d21 0 1px,#14171a 1px 28px),repeating-linear-gradient(90deg,#1a1d21 0 1px,#14171a 1px 28px); cursor:grab; }\n#map-canvas-wrap.custom-active{ display:block; }\n#map-canvas-wrap.dragging{ cursor:grabbing; }\n#map-content{ position:absolute; top:0; left:0; transform-origin:0 0; }\n#map-content img{ display:block; max-width:none; user-select:none; -webkit-user-drag:none; }\n#map-no-base{ position:absolute; inset:0; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:14px; text-align:center; padding:30px; z-index:2; }\n#map-no-base.hidden{ display:none; }\n#map-no-base svg{ width:40px; height:40px; color:var(--line); }\n#map-no-base p{ font-size:12.5px; color:var(--text-mid); max-width:260px; line-height:1.7; }\n.map-pin{ position:absolute; width:26px; height:26px; margin:-26px -13px 0; cursor:pointer; z-index:10; }\n.map-pin svg{ width:26px; height:26px; filter:drop-shadow(0 2px 4px rgba(0,0,0,0.4)); }\n.map-pin .pin-fill{ fill:#4a90c2; }\n.map-pin.selected .pin-fill{ fill:var(--accent); }\n.map-pin .pin-count{ position:absolute; top:1px; left:50%; transform:translateX(-50%); font-family:var(--mono); font-size:8.5px; font-weight:700; color:#0c0e10; line-height:1; }\n#map-zoom{ position:absolute; bottom:16px; right:16px; z-index:5; display:flex; flex-direction:column; background:rgba(29,33,38,0.85); border:1px solid var(--line); border-radius:8px; overflow:hidden; backdrop-filter:blur(6px); }\n#map-zoom .zoom-btn{ width:32px; height:32px; }\n\n#geo-map-wrap{ flex:1; position:relative; display:none; }\n#geo-map-wrap.show{ display:block; }\n#geo-map{ position:absolute; inset:0; background:#1a1d21; }\n.leaflet-container{ background:#1a1d21 !important; font-family:var(--sans) !important; }\n.leaflet-control-attribution{ background:rgba(20,22,25,0.75) !important; color:var(--text-low) !important; font-size:9.5px !important; }\n.leaflet-control-attribution a{ color:var(--text-mid) !important; }\n.leaflet-bar a{ background:var(--bg-panel) !important; color:var(--text-hi) !important; border-color:var(--line) !important; }\n.leaflet-bar a:hover{ background:var(--bg-panel-raised) !important; }\n#geo-layer-switch{ position:absolute; top:14px; right:14px; z-index:500; display:flex; flex-direction:column; background:rgba(29,33,38,0.92); border:1px solid var(--line); border-radius:8px; padding:3px; backdrop-filter:blur(6px); gap:2px; }\n.layer-btn{ font-family:var(--mono); font-size:10.5px; font-weight:700; padding:7px 12px; border-radius:5px; cursor:pointer; color:var(--text-mid); text-align:left; white-space:nowrap; }\n.layer-btn.active{ background:var(--accent); color:#1a1208; }\n.layer-btn:not(.active):hover{ color:var(--text-hi); }\n.geo-pin-icon{ display:flex; align-items:center; justify-content:center; }\n.geo-pin-icon svg{ filter:drop-shadow(0 2px 4px rgba(0,0,0,0.5)); }\n\n#point-panel{ flex:1; height:100%; display:flex; flex-direction:column; background:#0c0e10; position:relative; }\n#point-empty{ flex:1; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:16px; text-align:center; padding:40px; }\n#point-empty.hidden{ display:none; }\n#point-empty svg{ width:48px; height:48px; color:var(--line); }\n#point-empty p{ font-size:13px; color:var(--text-mid); max-width:300px; line-height:1.7; }\n#point-active{ flex:1; display:none; flex-direction:column; height:100%; }\n#point-active.show{ display:flex; }\n#point-header{ padding:64px 20px 0; background:var(--bg-panel); border-bottom:1px solid var(--line-soft); }\n#point-header .ttl-row{ display:flex; justify-content:space-between; align-items:flex-start; margin-bottom:14px; }\n#point-header .ttl{ font-size:15px; font-weight:700; }\n#point-header .sub{ font-family:var(--mono); font-size:10.5px; color:var(--text-low); margin-top:3px; }\n#epoch-tabs{ display:flex; gap:4px; overflow-x:auto; }\n#epoch-tabs::-webkit-scrollbar{ height:0; }\n.epoch-tab{ font-family:var(--mono); font-size:12px; font-weight:600; padding:9px 14px; cursor:pointer; color:var(--text-mid); border-bottom:2px solid transparent; white-space:nowrap; flex-shrink:0; display:flex; align-items:center; gap:6px; }\n.epoch-tab:hover{ color:var(--text-hi); }\n.epoch-tab.active{ color:var(--accent); border-bottom-color:var(--accent); }\n.epoch-tab .dot{ width:5px; height:5px; border-radius:50%; background:var(--text-low); }\n.epoch-tab.active .dot{ background:var(--accent); }\n\n#point-stage{ flex:1; position:relative; overflow:hidden; background:#0c0e10; cursor:grab; }\n#point-stage.dragging{ cursor:grabbing; }\n#point-canvas{ position:absolute; inset:0; }\n#point-no-epoch{ position:absolute; inset:0; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:14px; text-align:center; padding:30px; }\n#point-no-epoch.hidden{ display:none; }\n#point-no-epoch svg{ width:36px; height:36px; color:var(--line); }\n#point-bottombar{ position:absolute; bottom:14px; right:18px; z-index:6; display:flex; gap:8px; }\n\n#split-toggle-row{ display:flex; align-items:center; gap:8px; padding:10px 20px; background:var(--bg-panel); border-bottom:1px solid var(--line-soft); font-size:11.5px; color:var(--text-mid); }\n#split-toggle-row select{ font-family:var(--mono); font-size:11px; background:var(--bg-deep); border:1px solid var(--line); color:var(--text-hi); border-radius:5px; padding:4px 8px; }\n.switch{ width:34px; height:18px; border-radius:10px; background:var(--line); position:relative; cursor:pointer; flex-shrink:0; }\n.switch.on{ background:var(--accent); }\n.switch::after{ content:''; position:absolute; width:14px; height:14px; border-radius:50%; background:#fff; top:2px; left:2px; transition:left .15s; }\n.switch.on::after{ left:18px; }\n#split-line{ position:absolute; top:0; bottom:0; width:2px; background:var(--accent); z-index:8; pointer-events:none; box-shadow:0 0 8px var(--accent-glow); display:none; }\n#split-line.show{ display:block; }\n#split-handle{ position:absolute; top:50%; left:50%; transform:translate(-50%,-50%); width:34px; height:34px; border-radius:50%; background:var(--accent); display:flex; align-items:center; justify-content:center; pointer-events:auto; cursor:ew-resize; box-shadow:0 2px 10px rgba(0,0,0,0.4); }\n#split-handle svg{ width:16px; height:16px; color:#1a1208; }\n.epoch-badge{ position:absolute; top:14px; z-index:7; font-family:var(--mono); font-size:10.5px; font-weight:700; background:rgba(20,22,25,0.85); border:1px solid var(--line); padding:4px 10px; border-radius:6px; backdrop-filter:blur(4px); display:none; }\n.epoch-badge.show{ display:block; }\n#epoch-badge-left{ left:14px; }\n#epoch-badge-right{ right:14px; }\n\n@media (max-width:860px){\n  #compare-view.show{ flex-direction:column; }\n  #map-panel{ width:100%; height:42%; min-width:0; border-right:none; border-bottom:1px solid var(--line); }\n  #point-panel{ height:58%; }\n  #mode-switch{ top:12px; }\n  #map-header, #point-header{ padding-top:14px; }\n}\n@media (max-width:720px){\n  #sidebar{ position:absolute; left:0; top:0; height:100%; }\n  #sidebar:not(.collapsed){ box-shadow:8px 0 24px rgba(0,0,0,0.4); }\n  #topbar{ padding:16px 14px 14px 60px; }\n  .stage-title{ font-size:15px; }\n}\n";
+  const SHARE_BODY = "<div id=\"app\">\n  <div id=\"mode-switch\">\n    <div class=\"mode-btn active\" id=\"mode-tour\" data-mode=\"tour\">\n      <svg viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\"><circle cx=\"12\" cy=\"12\" r=\"10\"/><path d=\"M2 12h20M12 2a15 15 0 010 20M12 2a15 15 0 000 20\"/></svg>\n      環景導覽\n    </div>\n    <div class=\"mode-btn\" id=\"mode-compare\" data-mode=\"compare\">\n      <svg viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\"><path d=\"M9 3v18M3 7h6M3 17h6M15 3v18M15 7h6M15 17h6\"/></svg>\n      地圖時期比對\n    </div>\n  </div>\n  <div id=\"readonly-badge\">唯讀檢視版</div>\n\n  <aside id=\"sidebar\">\n    <div class=\"sb-header\">\n      <p class=\"sb-eyebrow\">PANORAMA SYSTEM</p>\n      <h1 class=\"sb-title\">環景導覽</h1>\n      <p class=\"sb-sub\" id=\"scene-count\">00 個場景</p>\n    </div>\n    <div id=\"scene-list\"></div>\n  </aside>\n  <button id=\"sidebar-toggle\" title=\"收合／展開場景清冊\">\n    <svg viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><path d=\"M3 12h18M3 6h18M3 18h18\"/></svg>\n  </button>\n\n  <main id=\"stage-wrap\">\n    <div id=\"stage\">\n      <canvas id=\"pano-canvas\"></canvas>\n      <div id=\"topbar\">\n        <div class=\"stage-title-wrap\">\n          <p class=\"stage-eyebrow\" id=\"scene-eyebrow\">--</p>\n          <h2 class=\"stage-title\" id=\"scene-title\">尚未載入場景</h2>\n          <p class=\"stage-coords\" id=\"scene-coords\">LAT -- / LON --</p>\n        </div>\n        <div class=\"icon-btn\" id=\"btn-fullscreen\" title=\"全螢幕\">\n          <svg viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><path d=\"M8 3H5a2 2 0 0 0-2 2v3M16 3h3a2 2 0 0 1 2 2v3M21 16v3a2 2 0 0 1-2 2h-3M8 21H5a2 2 0 0 1-2-2v-3\"/></svg>\n        </div>\n      </div>\n      <div id=\"bottombar\">\n        <div class=\"zoom-group\">\n          <div class=\"zoom-btn\" id=\"btn-zoom-out\"><svg viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\"><circle cx=\"11\" cy=\"11\" r=\"7\"/><path d=\"M21 21l-4.3-4.3M8 11h6\"/></svg></div>\n          <div class=\"zoom-divider\"></div>\n          <div class=\"fov-readout\" id=\"fov-readout\">90°</div>\n          <div class=\"zoom-divider\"></div>\n          <div class=\"zoom-btn\" id=\"btn-zoom-in\"><svg viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\"><circle cx=\"11\" cy=\"11\" r=\"7\"/><path d=\"M21 21l-4.3-4.3M11 8v6M8 11h6\"/></svg></div>\n        </div>\n      </div>\n      <div id=\"empty-stage\">\n        <div class=\"empty-icon\"><svg viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.6\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><circle cx=\"12\" cy=\"12\" r=\"10\"/><path d=\"M2 12h20M12 2a15 15 0 010 20M12 2a15 15 0 000 20\"/></svg></div>\n        <p class=\"empty-title\">尚無場景資料</p>\n        <p class=\"empty-sub\">此分享版尚未內含任何環景場景。</p>\n      </div>\n    </div>\n\n    <div id=\"compare-view\">\n      <div id=\"map-panel\">\n        <div id=\"map-header\">\n          <div>\n            <p class=\"ttl\">監測點位地圖</p>\n            <p class=\"sub\" id=\"map-sub\">尚未設定底圖</p>\n          </div>\n          <div id=\"map-source-switch\">\n            <div class=\"map-src-btn active\" data-src=\"custom\">自訂底圖</div>\n            <div class=\"map-src-btn\" data-src=\"geo\">地理地圖</div>\n          </div>\n        </div>\n        <div id=\"map-canvas-wrap\" class=\"custom-active\">\n          <div id=\"map-content\"></div>\n          <div id=\"map-no-base\">\n            <svg viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.5\"><rect x=\"3\" y=\"3\" width=\"18\" height=\"18\" rx=\"2\"/><circle cx=\"8.5\" cy=\"8.5\" r=\"1.5\"/><path d=\"M21 15l-5-5L5 21\"/></svg>\n            <p>此分享版尚未設定自訂底圖。</p>\n          </div>\n          <div id=\"map-zoom\">\n            <div class=\"zoom-btn\" id=\"map-zoom-in\"><svg viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\"><circle cx=\"11\" cy=\"11\" r=\"7\"/><path d=\"M21 21l-4.3-4.3M11 8v6M8 11h6\"/></svg></div>\n            <div class=\"zoom-btn\" id=\"map-zoom-out\"><svg viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\"><circle cx=\"11\" cy=\"11\" r=\"7\"/><path d=\"M21 21l-4.3-4.3M8 11h6\"/></svg></div>\n            <div class=\"zoom-btn\" id=\"map-zoom-reset\"><svg viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><path d=\"M3 12a9 9 0 109-9 9.75 9.75 0 00-6.74 2.74L3 8\"/><path d=\"M3 3v5h5\"/></svg></div>\n          </div>\n        </div>\n        <div id=\"geo-map-wrap\">\n          <div id=\"geo-map\"></div>\n          <div id=\"geo-layer-switch\">\n            <div class=\"layer-btn active\" data-layer=\"street\">街道圖</div>\n            <div class=\"layer-btn\" data-layer=\"satellite\">衛星影像</div>\n          </div>\n        </div>\n      </div>\n\n      <div id=\"point-panel\">\n        <div id=\"point-empty\">\n          <svg viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.5\"><path d=\"M21 10c0 7-9 12-9 12S3 17 3 10a9 9 0 0118 0z\"/><circle cx=\"12\" cy=\"10\" r=\"3\"/></svg>\n          <p>在左側地圖點選一個監測點位，即可瀏覽該位置的多時期全景影像。</p>\n        </div>\n        <div id=\"point-active\">\n          <div id=\"point-header\">\n            <div class=\"ttl-row\">\n              <div>\n                <p class=\"ttl\" id=\"point-title\">點位名稱</p>\n                <p class=\"sub\" id=\"point-sub\">0 個時期</p>\n              </div>\n            </div>\n            <div id=\"epoch-tabs\"></div>\n          </div>\n          <div id=\"split-toggle-row\">\n            <div class=\"switch\" id=\"split-switch\"></div>\n            <span>左右滑桿比對兩個時期</span>\n            <select id=\"split-select-b\" style=\"margin-left:auto; display:none;\"></select>\n          </div>\n          <div id=\"point-stage\">\n            <canvas id=\"point-canvas\"></canvas>\n            <canvas id=\"point-canvas-b\" style=\"position:absolute; inset:0; display:none;\"></canvas>\n            <div class=\"epoch-badge\" id=\"epoch-badge-left\"></div>\n            <div class=\"epoch-badge\" id=\"epoch-badge-right\"></div>\n            <div id=\"split-line\"><div id=\"split-handle\"><svg viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2.5\" stroke-linecap=\"round\"><path d=\"M8 5l-5 7 5 7M16 5l5 7-5 7\"/></svg></div></div>\n            <div id=\"point-no-epoch\">\n              <svg viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.5\"><rect x=\"3\" y=\"3\" width=\"18\" height=\"18\" rx=\"2\"/><circle cx=\"8.5\" cy=\"8.5\" r=\"1.5\"/><path d=\"M21 15l-5-5L5 21\"/></svg>\n              <p>此點位尚無全景影像。</p>\n            </div>\n            <div id=\"point-bottombar\">\n              <div class=\"zoom-group\">\n                <div class=\"zoom-btn\" id=\"pt-zoom-out\"><svg viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\"><circle cx=\"11\" cy=\"11\" r=\"7\"/><path d=\"M21 21l-4.3-4.3M8 11h6\"/></svg></div>\n                <div class=\"zoom-divider\"></div>\n                <div class=\"fov-readout\" id=\"pt-fov-readout\">90°</div>\n                <div class=\"zoom-divider\"></div>\n                <div class=\"zoom-btn\" id=\"pt-zoom-in\"><svg viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\"><circle cx=\"11\" cy=\"11\" r=\"7\"/><path d=\"M21 21l-4.3-4.3M11 8v6M8 11h6\"/></svg></div>\n              </div>\n            </div>\n          </div>\n        </div>\n      </div>\n    </div>\n  </main>\n</div>\n";
+  const SHARE_JS = "(function(){\n  \"use strict\";\n  function escapeHtml(s){ const d=document.createElement('div'); d.textContent=s||''; return d.innerHTML; }\n\n  /* ---- 球面全景渲染引擎（與主系統相同邏輯） ---- */\n  function createPanoEngine(canvas){\n    const ctx = canvas.getContext('2d');\n    const state = { img:null, srcCanvas:null, srcData:null, yaw:0, pitch:0, fov:Math.PI/2 };\n    const FOV_MIN=0.35, FOV_MAX=1.55;\n\n    function resize(){\n      const wrap = canvas.parentElement;\n      canvas.width = wrap.clientWidth * devicePixelRatio;\n      canvas.height = wrap.clientHeight * devicePixelRatio;\n      canvas.style.width = wrap.clientWidth + 'px';\n      canvas.style.height = wrap.clientHeight + 'px';\n    }\n    function setImage(img){\n      state.img = img; state.srcCanvas = null; state.srcData = null;\n      state.yaw = 0; state.pitch = 0; state.fov = Math.PI/2;\n    }\n    function clampPitch(p){ const lim=Math.PI/2-0.05; return Math.max(-lim, Math.min(lim,p)); }\n    function setFov(v){ state.fov = Math.max(FOV_MIN, Math.min(FOV_MAX, v)); }\n\n    let renderQueued=false;\n    function render(){ if(renderQueued) return; renderQueued=true; requestAnimationFrame(()=>{ renderQueued=false; doRender(); }); }\n\n    function doRender(){\n      if(!state.img){ ctx.clearRect(0,0,canvas.width,canvas.height); return; }\n      const img = state.img;\n      const w = canvas.width, h = canvas.height;\n      if(w===0||h===0) return;\n      if(!state.srcCanvas){\n        const sc = document.createElement('canvas');\n        const maxW = 6000;\n        const scale = Math.min(1, maxW/img.width);\n        sc.width = Math.round(img.width*scale);\n        sc.height = Math.round(img.height*scale);\n        const sctx = sc.getContext('2d');\n        sctx.imageSmoothingEnabled = true; sctx.imageSmoothingQuality = 'high';\n        sctx.drawImage(img,0,0,sc.width,sc.height);\n        state.srcCanvas = sc;\n        state.srcData = sctx.getImageData(0,0,sc.width,sc.height);\n      }\n      const src = state.srcData;\n      const sw=src.width, sh=src.height;\n      const out = ctx.createImageData(w,h);\n      const outData = out.data, srcData = src.data;\n      const aspect = w/h;\n      const tanHalfFov = Math.tan(state.fov/2);\n      const cosY=Math.cos(state.yaw), sinY=Math.sin(state.yaw);\n      const cosP=Math.cos(state.pitch), sinP=Math.sin(state.pitch);\n      const totalPx = w*h;\n      const step = totalPx > 3800000 ? 2 : 1;\n\n      for(let py=0; py<h; py+=step){\n        const ny=(py/h)*2-1;\n        const vy=-ny*tanHalfFov;\n        for(let px=0; px<w; px+=step){\n          const nx=(px/w)*2-1;\n          const vx=nx*tanHalfFov*aspect;\n          let dx=vx, dy=vy, dz=1;\n          const len=Math.sqrt(dx*dx+dy*dy+dz*dz);\n          dx/=len; dy/=len; dz/=len;\n          let ry=dy*cosP-dz*sinP;\n          let rz=dy*sinP+dz*cosP;\n          let rx=dx;\n          let fx=rx*cosY+rz*sinY;\n          let fz=-rx*sinY+rz*cosY;\n          let fy=ry;\n          const lon=Math.atan2(fx,fz);\n          const lat=Math.asin(Math.max(-1,Math.min(1,fy)));\n          let sxF=((lon/Math.PI)*0.5+0.5)*sw;\n          let syF=(0.5-(lat/Math.PI))*sh;\n          sxF = ((sxF % sw) + sw) % sw;\n          syF = Math.min(sh-1.001, Math.max(0, syF));\n          const x0 = sxF|0, y0 = syF|0;\n          const x1 = (x0+1) % sw, y1 = Math.min(sh-1, y0+1);\n          const fx2 = sxF - x0, fy2 = syF - y0;\n          const i00=(y0*sw+x0)*4, i10=(y0*sw+x1)*4, i01=(y1*sw+x0)*4, i11=(y1*sw+x1)*4;\n          const w00=(1-fx2)*(1-fy2), w10=fx2*(1-fy2), w01=(1-fx2)*fy2, w11=fx2*fy2;\n          const r = srcData[i00]*w00 + srcData[i10]*w10 + srcData[i01]*w01 + srcData[i11]*w11;\n          const g = srcData[i00+1]*w00 + srcData[i10+1]*w10 + srcData[i01+1]*w01 + srcData[i11+1]*w11;\n          const b = srcData[i00+2]*w00 + srcData[i10+2]*w10 + srcData[i01+2]*w01 + srcData[i11+2]*w11;\n          for(let oy=0; oy<step && py+oy<h; oy++){\n            for(let ox=0; ox<step && px+ox<w; ox++){\n              const di=((py+oy)*w+(px+ox))*4;\n              outData[di]=r; outData[di+1]=g; outData[di+2]=b; outData[di+3]=255;\n            }\n          }\n        }\n      }\n      ctx.putImageData(out,0,0);\n    }\n\n    function projectToScreen(hYaw,hPitch){\n      const wrap = canvas.parentElement;\n      const cosY=Math.cos(state.yaw), sinY=Math.sin(state.yaw);\n      const cosP=Math.cos(state.pitch), sinP=Math.sin(state.pitch);\n      const wx=Math.cos(hPitch)*Math.sin(hYaw);\n      const wy=Math.sin(hPitch);\n      const wz=Math.cos(hPitch)*Math.cos(hYaw);\n      let fx=wx*cosY-wz*sinY, fz=wx*sinY+wz*cosY, fy=wy;\n      let dy=fy*cosP+fz*sinP, dz=-fy*sinP+fz*cosP, dx=fx;\n      if(dz<=0.001) return null;\n      const aspect = wrap.clientWidth/wrap.clientHeight;\n      const tanHalfFov=Math.tan(state.fov/2);\n      const ndx=(dx/dz)/(tanHalfFov*aspect);\n      const ndy=(dy/dz)/tanHalfFov;\n      if(Math.abs(ndx)>1.15||Math.abs(ndy)>1.15) return null;\n      return { x:(ndx*0.5+0.5)*wrap.clientWidth, y:(1-(ndy*0.5+0.5))*wrap.clientHeight };\n    }\n\n    function bindDrag(opts){\n      opts = opts||{};\n      let dragging=false, lastX=0, lastY=0;\n      const wrap = canvas.parentElement;\n      wrap.addEventListener('mousedown', e=>{ dragging=true; lastX=e.clientX; lastY=e.clientY; wrap.classList.add('dragging'); });\n      window.addEventListener('mousemove', e=>{\n        if(!dragging) return;\n        const dx=e.clientX-lastX, dy=e.clientY-lastY;\n        lastX=e.clientX; lastY=e.clientY;\n        state.yaw -= dx*0.0028*state.fov;\n        state.pitch = clampPitch(state.pitch + dy*0.0028*state.fov);\n        render(); if(opts.onChange) opts.onChange();\n      });\n      window.addEventListener('mouseup', ()=>{ dragging=false; wrap.classList.remove('dragging'); });\n      let lastTouchDist=null;\n      wrap.addEventListener('touchstart', e=>{\n        if(e.touches.length===1){ dragging=true; lastX=e.touches[0].clientX; lastY=e.touches[0].clientY; }\n        else if(e.touches.length===2){ lastTouchDist = Math.hypot(e.touches[0].clientX-e.touches[1].clientX, e.touches[0].clientY-e.touches[1].clientY); }\n      },{passive:true});\n      wrap.addEventListener('touchmove', e=>{\n        if(e.touches.length===1 && dragging){\n          const dx=e.touches[0].clientX-lastX, dy=e.touches[0].clientY-lastY;\n          lastX=e.touches[0].clientX; lastY=e.touches[0].clientY;\n          state.yaw -= dx*0.0028*state.fov;\n          state.pitch = clampPitch(state.pitch + dy*0.0028*state.fov);\n          render(); if(opts.onChange) opts.onChange();\n        } else if(e.touches.length===2 && lastTouchDist){\n          const d = Math.hypot(e.touches[0].clientX-e.touches[1].clientX, e.touches[0].clientY-e.touches[1].clientY);\n          const delta=(lastTouchDist-d)*0.0025;\n          lastTouchDist=d;\n          setFov(state.fov+delta); render(); if(opts.onChange) opts.onChange();\n        }\n      },{passive:true});\n      wrap.addEventListener('touchend', ()=>{ dragging=false; lastTouchDist=null; });\n      wrap.addEventListener('wheel', e=>{\n        e.preventDefault();\n        setFov(state.fov + e.deltaY*0.001);\n        render(); if(opts.onChange) opts.onChange();\n      },{passive:false});\n    }\n    return { canvas, state, resize, setImage, render, setFov, projectToScreen, bindDrag };\n  }\n\n  /* ---- 讀取內嵌資料 ---- */\n  let DATA = { scenes:[], basemap:null, points:[] };\n  try{\n    const raw = document.getElementById('embedded-data').textContent;\n    DATA = JSON.parse(raw);\n  }catch(err){ console.error('資料讀取失敗', err); }\n\n  function loadImageAsync(src){\n    return new Promise(resolve=>{\n      if(!src){ resolve(null); return; }\n      const img = new Image();\n      img.onload=()=>resolve(img);\n      img.onerror=()=>resolve(null);\n      img.src = src;\n    });\n  }\n\n  /* ---- 模式切換 ---- */\n  const modeButtons = document.querySelectorAll('.mode-btn');\n  const compareView = document.getElementById('compare-view');\n  const stage = document.getElementById('stage');\n  const sidebar = document.getElementById('sidebar');\n  const sidebarToggle = document.getElementById('sidebar-toggle');\n  let currentMode = 'tour';\n  modeButtons.forEach(btn=>{\n    btn.addEventListener('click', ()=>{\n      const m = btn.dataset.mode;\n      if(m===currentMode) return;\n      currentMode = m;\n      modeButtons.forEach(b=>b.classList.toggle('active', b===btn));\n      if(m==='tour'){\n        compareView.classList.remove('show'); stage.style.display=''; sidebar.style.display=''; sidebarToggle.style.display='';\n      } else {\n        compareView.classList.add('show'); stage.style.display='none'; sidebar.style.display='none'; sidebarToggle.style.display='none';\n        setTimeout(()=>{ pointEngine.resize(); pointEngineB.resize(); pointEngine.render(); renderMapPins(); if(geoMap){ geoMap.invalidateSize(); renderGeoPins(); } },50);\n      }\n    });\n  });\n\n  /* ---- 環景導覽（唯讀） ---- */\n  let scenes = [];\n  let activeSceneId = null;\n  const tourEngine = createPanoEngine(document.getElementById('pano-canvas'));\n  tourEngine.resize();\n  window.addEventListener('resize', ()=>{ tourEngine.resize(); tourEngine.render(); placeHotspots(); });\n\n  const sceneListEl = document.getElementById('scene-list');\n  const sceneCountEl = document.getElementById('scene-count');\n  const emptyStage = document.getElementById('empty-stage');\n  const sceneTitleEl = document.getElementById('scene-title');\n  const sceneEyebrowEl = document.getElementById('scene-eyebrow');\n  const sceneCoordsEl = document.getElementById('scene-coords');\n  const fovReadout = document.getElementById('fov-readout');\n  const hotspotLayer = (()=>{ const d=document.createElement('div'); d.style.position='absolute'; d.style.inset='0'; d.style.zIndex='15'; d.style.pointerEvents='none'; stage.appendChild(d); return d; })();\n\n  tourEngine.bindDrag({ onChange: ()=>{\n    fovReadout.textContent = Math.round(tourEngine.state.fov*180/Math.PI)+'°';\n    placeHotspots();\n  }});\n  document.getElementById('btn-zoom-in').addEventListener('click', ()=>{ tourEngine.setFov(tourEngine.state.fov-0.12); fovReadout.textContent=Math.round(tourEngine.state.fov*180/Math.PI)+'°'; tourEngine.render(); placeHotspots(); });\n  document.getElementById('btn-zoom-out').addEventListener('click', ()=>{ tourEngine.setFov(tourEngine.state.fov+0.12); fovReadout.textContent=Math.round(tourEngine.state.fov*180/Math.PI)+'°'; tourEngine.render(); placeHotspots(); });\n  document.getElementById('btn-fullscreen').addEventListener('click', ()=>{\n    if(!document.fullscreenElement) stage.requestFullscreen?.(); else document.exitFullscreen?.();\n  });\n  sidebarToggle.addEventListener('click', ()=>sidebar.classList.toggle('collapsed'));\n\n  function placeHotspots(){\n    hotspotLayer.innerHTML='';\n    const scene = scenes.find(s=>s.id===activeSceneId);\n    if(!scene) return;\n    (scene.hotspots||[]).forEach(h=>{\n      const p = tourEngine.projectToScreen(h.yaw, h.pitch);\n      if(!p) return;\n      const target = scenes.find(s=>s.id===h.targetId);\n      const el = document.createElement('div');\n      el.className='hotspot';\n      el.style.left=p.x+'px'; el.style.top=p.y+'px'; el.style.pointerEvents='auto';\n      el.innerHTML = `<div class=\"hotspot-ring\"></div><div class=\"hotspot-core\"></div><div class=\"hotspot-label\">${escapeHtml(h.label||(target?target.name:'未知場景'))}</div>`;\n      el.addEventListener('click', e=>{ e.stopPropagation(); if(target) loadScene(target.id, h.label); });\n      hotspotLayer.appendChild(el);\n    });\n  }\n\n  function renderSceneList(){\n    sceneCountEl.textContent = String(scenes.length).padStart(2,'0')+' 個場景';\n    if(scenes.length===0){\n      sceneListEl.innerHTML = `<div class=\"sb-empty\">尚無場景資料</div>`;\n      return;\n    }\n    sceneListEl.innerHTML='';\n    scenes.forEach((s,i)=>{\n      const card=document.createElement('div');\n      card.className='scene-card'+(s.id===activeSceneId?' active':'');\n      card.innerHTML = `\n        <div class=\"scene-idx\">${String(i+1).padStart(2,'0')}</div>\n        <div class=\"scene-thumb\" style=\"background-image:url('${s.src}')\"></div>\n        <div class=\"scene-meta\">\n          <div class=\"scene-name\">${escapeHtml(s.name)}</div>\n          <div class=\"scene-tag\">${(s.hotspots||[]).length} 熱點${s.note?' · '+escapeHtml(s.note):''}</div>\n        </div>`;\n      card.addEventListener('click', ()=>loadScene(s.id));\n      sceneListEl.appendChild(card);\n    });\n  }\n\n  function loadScene(id, transitionLabel){\n    const scene = scenes.find(s=>s.id===id);\n    if(!scene) return;\n    activeSceneId=id;\n    tourEngine.setImage(scene.img);\n    tourEngine.render();\n    fovReadout.textContent = '90°';\n    sceneTitleEl.textContent = scene.name;\n    sceneEyebrowEl.textContent = transitionLabel ? ('→ '+transitionLabel) : ('SCENE / '+(scenes.findIndex(s=>s.id===id)+1).toString().padStart(2,'0'));\n    sceneCoordsEl.textContent = scene.note ? scene.note : 'EQUIRECTANGULAR · NO METADATA';\n    emptyStage.classList.add('hidden');\n    renderSceneList();\n    placeHotspots();\n  }\n\n  /* ---- 地圖比對（唯讀） ---- */\n  let basemap = null;\n  let points = [];\n  let activePointId = null;\n  let activeEpochId = null;\n\n  const mapWrap = document.getElementById('map-canvas-wrap');\n  const mapContent = document.getElementById('map-content');\n  const mapNoBase = document.getElementById('map-no-base');\n  const mapSub = document.getElementById('map-sub');\n  let mapScale=1, mapPanX=0, mapPanY=0, mapDragging=false, mapLastX=0, mapLastY=0;\n\n  function applyMapTransform(){ mapContent.style.transform = `translate(${mapPanX}px, ${mapPanY}px) scale(${mapScale})`; }\n  function fitMapToWrap(){\n    if(!basemap) return;\n    const ww=mapWrap.clientWidth, wh=mapWrap.clientHeight;\n    const iw=basemap.img.width, ih=basemap.img.height;\n    const scale = Math.min(ww/iw, wh/ih)*0.92;\n    mapScale=scale; mapPanX=(ww-iw*scale)/2; mapPanY=(wh-ih*scale)/2;\n    applyMapTransform();\n  }\n  mapWrap.addEventListener('mousedown', e=>{\n    if(e.target.closest('.map-pin')) return;\n    mapDragging=true; mapLastX=e.clientX; mapLastY=e.clientY; mapWrap.classList.add('dragging');\n  });\n  window.addEventListener('mousemove', e=>{\n    if(!mapDragging) return;\n    mapPanX += e.clientX-mapLastX; mapPanY += e.clientY-mapLastY;\n    mapLastX=e.clientX; mapLastY=e.clientY;\n    applyMapTransform(); renderMapPins();\n  });\n  window.addEventListener('mouseup', ()=>{ mapDragging=false; mapWrap.classList.remove('dragging'); });\n  mapWrap.addEventListener('wheel', e=>{\n    if(!basemap) return;\n    e.preventDefault();\n    const rect = mapWrap.getBoundingClientRect();\n    const mx=e.clientX-rect.left, my=e.clientY-rect.top;\n    const prevScale=mapScale;\n    mapScale = Math.max(0.1, Math.min(6, mapScale*(1-e.deltaY*0.0015)));\n    const ratio = mapScale/prevScale;\n    mapPanX = mx-(mx-mapPanX)*ratio; mapPanY = my-(my-mapPanY)*ratio;\n    applyMapTransform(); renderMapPins();\n  },{passive:false});\n  document.getElementById('map-zoom-in').addEventListener('click', ()=>zoomMapBy(1.2));\n  document.getElementById('map-zoom-out').addEventListener('click', ()=>zoomMapBy(0.83));\n  document.getElementById('map-zoom-reset').addEventListener('click', fitMapToWrap);\n  function zoomMapBy(f){\n    if(!basemap) return;\n    const ww=mapWrap.clientWidth, wh=mapWrap.clientHeight;\n    const prevScale=mapScale;\n    mapScale=Math.max(0.1, Math.min(6, mapScale*f));\n    const ratio=mapScale/prevScale;\n    mapPanX = ww/2-(ww/2-mapPanX)*ratio; mapPanY = wh/2-(wh/2-mapPanY)*ratio;\n    applyMapTransform(); renderMapPins();\n  }\n  function renderMapPins(){\n    mapContent.querySelectorAll('.map-pin').forEach(el=>el.remove());\n    points.filter(p=>p.kind==='custom').forEach(p=>{\n      const el=document.createElement('div');\n      el.className='map-pin'+(p.id===activePointId?' selected':'');\n      el.style.left=p.x+'px'; el.style.top=p.y+'px';\n      el.style.transform=`scale(${1/mapScale})`; el.style.transformOrigin='bottom center';\n      el.innerHTML = `<svg viewBox=\"0 0 26 26\"><path class=\"pin-fill\" d=\"M13 1C7.5 1 3 5.5 3 11c0 7.5 10 14 10 14s10-6.5 10-14c0-5.5-4.5-10-10-10z\"/><circle cx=\"13\" cy=\"11\" r=\"4\" fill=\"#0c0e10\"/></svg><div class=\"pin-count\">${p.epochs.length}</div>`;\n      el.title=p.name;\n      el.addEventListener('click', e=>{ e.stopPropagation(); selectPoint(p.id); });\n      mapContent.appendChild(el);\n    });\n  }\n\n  /* 地理地圖 */\n  let mapSourceMode='custom', geoMap=null, geoMarkers={}, geoLayers={};\n  const TAIWAN_DEFAULT_CENTER=[23.97,120.97], TAIWAN_DEFAULT_ZOOM=9;\n  function initGeoMap(){\n    if(geoMap) return;\n    geoMap = L.map('geo-map',{zoomControl:true, attributionControl:true}).setView(TAIWAN_DEFAULT_CENTER, TAIWAN_DEFAULT_ZOOM);\n    const streetLayer = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{maxZoom:19, attribution:'&copy; OpenStreetMap contributors'});\n    const satelliteLayer = L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',{maxZoom:19, attribution:'Tiles &copy; Esri'});\n    streetLayer.addTo(geoMap);\n    geoLayers = { street:streetLayer, satellite:satelliteLayer };\n    setTimeout(()=>geoMap.invalidateSize(), 60);\n  }\n  document.querySelectorAll('.layer-btn').forEach(btn=>{\n    btn.addEventListener('click', ()=>{\n      const layer = btn.dataset.layer;\n      document.querySelectorAll('.layer-btn').forEach(b=>b.classList.toggle('active', b===btn));\n      Object.values(geoLayers).forEach(l=>geoMap.removeLayer(l));\n      geoLayers[layer].addTo(geoMap);\n    });\n  });\n  function renderGeoPins(){\n    if(!geoMap) return;\n    Object.values(geoMarkers).forEach(m=>geoMap.removeLayer(m));\n    geoMarkers={};\n    points.filter(p=>p.kind==='geo').forEach(p=>{\n      const isActive = p.id===activePointId;\n      const icon = L.divIcon({\n        className:'',\n        html:`<div class=\"geo-pin-icon\"><svg width=\"28\" height=\"28\" viewBox=\"0 0 26 26\"><path d=\"M13 1C7.5 1 3 5.5 3 11c0 7.5 10 14 10 14s10-6.5 10-14c0-5.5-4.5-10-10-10z\" fill=\"${isActive?'#e8743b':'#4a90c2'}\"/><circle cx=\"13\" cy=\"11\" r=\"4\" fill=\"#0c0e10\"/></svg><div style=\"position:absolute; top:3px; left:50%; transform:translateX(-50%); font-family:monospace; font-size:8.5px; font-weight:700; color:#0c0e10;\">${p.epochs.length}</div></div>`,\n        iconSize:[28,28], iconAnchor:[14,28]\n      });\n      const marker = L.marker([p.lat,p.lon],{icon}).addTo(geoMap);\n      marker.bindTooltip(p.name,{direction:'top', offset:[0,-26]});\n      marker.on('click', ()=>selectPoint(p.id));\n      geoMarkers[p.id]=marker;\n    });\n  }\n  document.querySelectorAll('.map-src-btn').forEach(btn=>{\n    btn.addEventListener('click', ()=>{\n      const src = btn.dataset.src;\n      if(src===mapSourceMode) return;\n      mapSourceMode = src;\n      document.querySelectorAll('.map-src-btn').forEach(b=>b.classList.toggle('active', b===btn));\n      const customWrap = document.getElementById('map-canvas-wrap');\n      const geoWrap = document.getElementById('geo-map-wrap');\n      if(src==='custom'){\n        customWrap.classList.add('custom-active'); geoWrap.classList.remove('show');\n      } else {\n        customWrap.classList.remove('custom-active'); geoWrap.classList.add('show');\n        initGeoMap();\n        setTimeout(()=>{ geoMap.invalidateSize(); renderGeoPins(); },30);\n      }\n    });\n  });\n\n  /* 點位面板（唯讀） */\n  const pointEmpty = document.getElementById('point-empty');\n  const pointActive = document.getElementById('point-active');\n  const pointTitle = document.getElementById('point-title');\n  const pointSub = document.getElementById('point-sub');\n  const epochTabs = document.getElementById('epoch-tabs');\n  const pointNoEpoch = document.getElementById('point-no-epoch');\n  const pointStage = document.getElementById('point-stage');\n  const pointEngine = createPanoEngine(document.getElementById('point-canvas'));\n  const pointEngineB = createPanoEngine(document.getElementById('point-canvas-b'));\n  pointEngine.resize(); pointEngineB.resize();\n  window.addEventListener('resize', ()=>{ pointEngine.resize(); pointEngineB.resize(); pointEngine.render(); if(splitOn) syncSplitB(); });\n\n  const ptFovReadout = document.getElementById('pt-fov-readout');\n  function setPtFov(v){\n    pointEngine.setFov(v);\n    ptFovReadout.textContent = Math.round(pointEngine.state.fov*180/Math.PI)+'°';\n    pointEngine.render();\n    if(splitOn) syncSplitB();\n  }\n  document.getElementById('pt-zoom-in').addEventListener('click', ()=>setPtFov(pointEngine.state.fov-0.12));\n  document.getElementById('pt-zoom-out').addEventListener('click', ()=>setPtFov(pointEngine.state.fov+0.12));\n  pointEngine.bindDrag({ onChange: ()=>{\n    ptFovReadout.textContent = Math.round(pointEngine.state.fov*180/Math.PI)+'°';\n    if(splitOn) syncSplitB();\n  }});\n\n  function selectPoint(id){\n    activePointId = id;\n    renderMapPins(); renderGeoPins();\n    const p = points.find(x=>x.id===id);\n    if(!p) return;\n    pointEmpty.classList.add('hidden');\n    pointActive.classList.add('show');\n    pointTitle.textContent = p.name;\n    pointSub.textContent = `${p.epochs.length} 個時期${p.note?' · '+p.note:''}`;\n    renderEpochTabs();\n    if(p.epochs.length){ selectEpoch(p.epochs[p.epochs.length-1].id); }\n    else {\n      activeEpochId = null;\n      pointNoEpoch.classList.remove('hidden');\n      pointEngine.canvas.getContext('2d').clearRect(0,0,pointEngine.canvas.width,pointEngine.canvas.height);\n    }\n    setTimeout(()=>{ pointEngine.resize(); pointEngineB.resize(); if(activeEpochId) pointEngine.render(); },30);\n  }\n  function epochLabel(e){ return e.month ? `${e.year}/${String(e.month).padStart(2,'0')}` : `${e.year}`; }\n  function renderEpochTabs(){\n    const p = points.find(x=>x.id===activePointId);\n    if(!p) return;\n    const sorted = [...p.epochs].sort((a,b)=>(a.year+String(a.month||'').padStart(2,'0')).localeCompare(b.year+String(b.month||'').padStart(2,'0')));\n    epochTabs.innerHTML = sorted.map(e=>`<div class=\"epoch-tab ${e.id===activeEpochId?'active':''}\" data-id=\"${e.id}\"><span class=\"dot\"></span>${epochLabel(e)}</div>`).join('');\n    epochTabs.querySelectorAll('.epoch-tab').forEach(el=>el.addEventListener('click', ()=>selectEpoch(el.dataset.id)));\n    refreshSplitSelect();\n  }\n  function selectEpoch(id){\n    activeEpochId = id;\n    const p = points.find(x=>x.id===activePointId);\n    const e = p.epochs.find(x=>x.id===id);\n    if(!e) return;\n    pointNoEpoch.classList.add('hidden');\n    pointEngine.setImage(e.img);\n    setPtFov(Math.PI/2);\n    renderEpochTabs();\n    if(splitOn) syncSplitB();\n  }\n\n  /* 左右滑桿比對 */\n  const splitSwitch = document.getElementById('split-switch');\n  const splitSelectB = document.getElementById('split-select-b');\n  const splitLine = document.getElementById('split-line');\n  const canvasB = document.getElementById('point-canvas-b');\n  const badgeL = document.getElementById('epoch-badge-left');\n  const badgeR = document.getElementById('epoch-badge-right');\n  let splitOn=false, splitRatio=0.5;\n  splitSwitch.addEventListener('click', ()=>{\n    splitOn=!splitOn;\n    splitSwitch.classList.toggle('on', splitOn);\n    splitSelectB.style.display = splitOn?'':'none';\n    canvasB.style.display = splitOn?'':'none';\n    splitLine.classList.toggle('show', splitOn);\n    badgeL.classList.toggle('show', splitOn);\n    badgeR.classList.toggle('show', splitOn);\n    if(splitOn){ refreshSplitSelect(); syncSplitB(); applySplitClip(); }\n  });\n  function refreshSplitSelect(){\n    const p = points.find(x=>x.id===activePointId);\n    if(!p) return;\n    const sorted = [...p.epochs].sort((a,b)=>(a.year+String(a.month||'').padStart(2,'0')).localeCompare(b.year+String(b.month||'').padStart(2,'0')));\n    splitSelectB.innerHTML = sorted.map(e=>`<option value=\"${e.id}\">${epochLabel(e)}</option>`).join('');\n    const other = sorted.find(e=>e.id!==activeEpochId) || sorted[0];\n    if(other) splitSelectB.value = other.id;\n  }\n  splitSelectB.addEventListener('change', syncSplitB);\n  function getEpochB(){\n    const p = points.find(x=>x.id===activePointId);\n    if(!p) return null;\n    return p.epochs.find(x=>x.id===splitSelectB.value);\n  }\n  function syncSplitB(){\n    const p = points.find(x=>x.id===activePointId);\n    if(!p || !splitOn) return;\n    const eB = getEpochB();\n    const eA = p.epochs.find(x=>x.id===activeEpochId);\n    if(eA) badgeL.textContent = epochLabel(eA);\n    if(eB){\n      pointEngineB.setImage(eB.img);\n      pointEngineB.state.yaw = pointEngine.state.yaw + (eB.yawOffset||0);\n      pointEngineB.state.pitch = pointEngine.state.pitch;\n      pointEngineB.state.fov = pointEngine.state.fov;\n      pointEngineB.resize(); pointEngineB.render();\n      badgeR.textContent = epochLabel(eB);\n    }\n  }\n  let splitDragging=false;\n  const splitHandle = document.getElementById('split-handle');\n  splitHandle.addEventListener('mousedown', e=>{ e.stopPropagation(); splitDragging=true; });\n  window.addEventListener('mousemove', e=>{\n    if(!splitDragging) return;\n    const rect = pointStage.getBoundingClientRect();\n    splitRatio = Math.max(0.04, Math.min(0.96, (e.clientX-rect.left)/rect.width));\n    applySplitClip();\n  });\n  window.addEventListener('mouseup', ()=>splitDragging=false);\n  splitHandle.addEventListener('touchstart', e=>{ e.stopPropagation(); splitDragging=true; },{passive:true});\n  window.addEventListener('touchmove', e=>{\n    if(!splitDragging) return;\n    const rect = pointStage.getBoundingClientRect();\n    const x = e.touches[0].clientX;\n    splitRatio = Math.max(0.04, Math.min(0.96, (x-rect.left)/rect.width));\n    applySplitClip();\n  },{passive:true});\n  window.addEventListener('touchend', ()=>splitDragging=false);\n  function applySplitClip(){\n    const pct = splitRatio*100;\n    splitLine.style.left = pct+'%';\n    canvasB.style.clipPath = `inset(0 0 0 ${pct}%)`;\n    pointEngine.canvas.style.clipPath = splitOn ? `inset(0 ${100-pct}% 0 0)` : '';\n  }\n\n  /* ---- 初始載入內嵌資料 ---- */\n  async function init(){\n    for(const s of (DATA.scenes||[])){\n      const img = await loadImageAsync(s.src);\n      if(!img) continue;\n      scenes.push({ id:s.id, name:s.name, note:s.note, img, src:s.src, hotspots:s.hotspots||[] });\n    }\n    renderSceneList();\n    if(scenes.length) loadScene(scenes[0].id);\n\n    if(DATA.basemap && DATA.basemap.src){\n      const img = await loadImageAsync(DATA.basemap.src);\n      if(img){\n        basemap = { src:DATA.basemap.src, img, name:DATA.basemap.name };\n        mapSub.textContent = basemap.name + ` · ${img.width}×${img.height}px`;\n        mapNoBase.classList.add('hidden');\n        mapContent.innerHTML = `<img src=\"${basemap.src}\" draggable=\"false\">`;\n        setTimeout(()=>fitMapToWrap(), 50);\n      }\n    }\n\n    for(const p of (DATA.points||[])){\n      const epochs = [];\n      for(const e of (p.epochs||[])){\n        const img = await loadImageAsync(e.src);\n        if(!img) continue;\n        epochs.push({ id:e.id, year:e.year, month:e.month, note:e.note, img, src:e.src, yawOffset:e.yawOffset||0 });\n      }\n      const restored = { id:p.id, kind:p.kind, name:p.name, note:p.note, epochs };\n      if(p.kind==='geo'){ restored.lat=p.lat; restored.lon=p.lon; } else { restored.x=p.x; restored.y=p.y; }\n      points.push(restored);\n    }\n    renderMapPins();\n    if(points.some(p=>p.kind==='geo')){ initGeoMap(); setTimeout(()=>renderGeoPins(), 60); }\n  }\n\n  applyMapTransform();\n  init();\n})();\n";
+
+  function buildShareHtml(data){
+    const dataJson = JSON.stringify(data).replace(/<\/script>/g, '<\\/script>');
+    return `<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>現勘環景導覽（分享檢視版）</title>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.js"><\/script>
+<style>${SHARE_CSS}</style>
+</head>
+<body>
+${SHARE_BODY}
+<script id="embedded-data" type="application/json">${dataJson}<\/script>
+<script>${SHARE_JS}<\/script>
+</body>
+</html>`;
+  }
+
+  /* =========================================================
+     PART D：AI 影像分析（呼叫後端 Claude 視覺 API）
+  ========================================================= */
+  const modalAi = document.getElementById('modal-ai');
+  const aiModalTitle = document.getElementById('ai-modal-title');
+  const aiModalSub = document.getElementById('ai-modal-sub');
+  const aiModalBody = document.getElementById('ai-modal-body');
+  const btnCompareAi = document.getElementById('btn-compare-ai');
+
+  document.getElementById('btn-close-ai').addEventListener('click', ()=>modalAi.classList.remove('show'));
+  modalAi.addEventListener('click', e=>{ if(e.target===modalAi) modalAi.classList.remove('show'); });
+
+  // 將 canvas 縮放擷取為 JPEG dataURL（控制送出大小與成本）
+  function captureCanvas(canvas, maxW){
+    maxW = maxW || 1280;
+    const cw = canvas.width, ch = canvas.height;
+    if(!cw || !ch) return null;
+    const scale = Math.min(1, maxW/cw);
+    const tmp = document.createElement('canvas');
+    tmp.width = Math.round(cw*scale);
+    tmp.height = Math.round(ch*scale);
+    const tctx = tmp.getContext('2d');
+    tctx.drawImage(canvas, 0, 0, tmp.width, tmp.height);
+    return tmp.toDataURL('image/jpeg', 0.85);
+  }
+
+  function aiShowLoading(title, sub, label){
+    aiModalTitle.textContent = title;
+    aiModalSub.textContent = sub;
+    aiModalBody.innerHTML = `<div style="display:flex; flex-direction:column; align-items:center; gap:14px; padding:30px 0;">
+      <div class="loading-spinner"></div>
+      <p class="loading-label">${escapeHtml(label||'AI 判讀中，請稍候…')}</p></div>`;
+    modalAi.classList.add('show');
+  }
+  function aiShowError(msg){
+    aiModalBody.innerHTML = `<p class="ai-error">分析失敗：${escapeHtml(msg)}</p>
+      <p class="ai-error" style="color:var(--text-low); margin-top:8px;">請確認後端服務運作中、且已於 Render 設定 ANTHROPIC_API_KEY。</p>`;
+  }
+  function condClass(level){
+    if(['良好','無明顯變化'].includes(level)) return 'good';
+    if(['嚴重損壞','顯著變化'].includes(level)) return 'severe';
+    return 'mild';
+  }
+  function renderObservations(list, typeKey){
+    if(!list || !list.length) return '<p class="loading-label" style="margin:0 0 14px;">未發現明顯異常項目。</p>';
+    return '<ul class="ai-obs">' + list.map(o=>{
+      const main = typeKey ? `${escapeHtml(o.description)} <span style="color:var(--text-low)">· ${escapeHtml(o.change_type)}</span>` : escapeHtml(o.item);
+      return `<li><span class="ai-sev s-${escapeHtml(o.severity)}">${escapeHtml(o.severity)}</span>
+        <div class="ai-obs-body">${main}<div class="ai-obs-loc">${escapeHtml(o.location||'')}</div></div></li>`;
+    }).join('') + '</ul>';
+  }
+  function renderAiResult(level, summary, observations, report, typeKey){
+    aiModalBody.innerHTML = `
+      <span class="ai-badge ${condClass(level)}">${escapeHtml(level)}</span>
+      <div class="ai-result-summary">${escapeHtml(summary)}</div>
+      ${renderObservations(observations, typeKey)}
+      <div class="ai-report-label">現勘報告草稿</div>
+      <div class="ai-report" id="ai-report-text">${escapeHtml(report)}</div>
+      <button class="btn btn-sm ai-copy-btn" id="ai-copy-btn">複製報告文字</button>`;
+    const copyBtn = document.getElementById('ai-copy-btn');
+    copyBtn.addEventListener('click', ()=>{
+      navigator.clipboard.writeText(report).then(
+        ()=>{ copyBtn.textContent='已複製'; setTimeout(()=>copyBtn.textContent='複製報告文字',1500); },
+        ()=>showToast('複製失敗')
+      );
+    });
+  }
+
+  async function postJson(url, payload){
+    const res = await fetch(url, {
+      method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(payload)
+    });
+    const data = await res.json().catch(()=>({error:'回應解析失敗'}));
+    if(!res.ok) throw new Error(data.error || ('HTTP '+res.status));
+    return data;
+  }
+
+  // 導覽模式：分析當前視角
+  document.getElementById('btn-ai-analyze').addEventListener('click', async ()=>{
+    const scene = scenes.find(s=>s.id===activeSceneId);
+    if(!scene){ showToast('請先載入一個場景'); return; }
+    const image = captureCanvas(tourEngine.canvas);
+    if(!image){ showToast('畫面尚未就緒'); return; }
+    aiShowLoading('AI 視角分析', `場景：${scene.name}`, 'AI 判讀損壞／異常中…');
+    try{
+      const r = await postJson('/api/analyze', { image, point_name:scene.name, epoch_label:scene.note||'' });
+      renderAiResult(r.overall_condition, r.summary, r.observations, r.report, false);
+    }catch(e){ aiShowError(e.message); }
+  });
+
+  // 比對模式：比對兩個時期
+  btnCompareAi.addEventListener('click', async ()=>{
+    const p = points.find(x=>x.id===activePointId);
+    if(!p || p.epochs.length<2){ showToast('需要至少兩個時期才能比對'); return; }
+    const eA = p.epochs.find(x=>x.id===activeEpochId) || p.epochs[p.epochs.length-1];
+    let eB = getEpochB();
+    if(!eB || eB.id===eA.id){ eB = p.epochs.find(x=>x.id!==eA.id); }
+    if(!eB){ showToast('找不到可比對的另一個時期'); return; }
+
+    aiShowLoading('AI 跨時期比對', `${p.name}　${epochLabel(eA)} ↔ ${epochLabel(eB)}`, 'AI 偵測跨時期變化中…');
+
+    // 確保 A 畫面已渲染（pointEngine 目前即 activeEpoch）；將 B 以相同視角渲染到副畫布
+    pointEngineB.setImage(eB.img);
+    pointEngineB.state.yaw = pointEngine.state.yaw + (eB.yawOffset||0);
+    pointEngineB.state.pitch = pointEngine.state.pitch;
+    pointEngineB.state.fov = pointEngine.state.fov;
+    pointEngineB.resize();
+    pointEngine.render();
+    pointEngineB.render();
+
+    await new Promise(r=>setTimeout(r, 180)); // 等待 requestAnimationFrame 完成繪製
+    const image_a = captureCanvas(pointEngine.canvas);
+    const image_b = captureCanvas(pointEngineB.canvas);
+    if(!image_a || !image_b){ aiShowError('畫面擷取失敗'); return; }
+    try{
+      const r = await postJson('/api/compare', {
+        image_a, image_b, point_name:p.name, label_a:epochLabel(eA), label_b:epochLabel(eB)
+      });
+      renderAiResult(r.change_level, r.summary, r.changes, r.report, true);
+    }catch(e){ aiShowError(e.message); }
+  });
+
+  // ===== 鍵盤快捷鍵 =====
+  document.addEventListener('keydown', e=>{
+    if(e.target.tagName==='INPUT'||e.target.tagName==='TEXTAREA'||e.target.tagName==='SELECT') return;
+    const openModal = document.querySelector('.modal-overlay.show');
+    if(openModal){
+      if(e.key==='Escape') openModal.classList.remove('show');
+      return;
+    }
+    if(currentMode==='tour'){
+      if(e.key==='Escape'){ if(hotspotMode) exitHotspotMode(); return; }
+      const step = 0.08;
+      switch(e.key){
+        case 'ArrowLeft':  case 'a': case 'A': e.preventDefault();
+          tourEngine.state.yaw -= step; tourEngine.render(); placeHotspots(); break;
+        case 'ArrowRight': case 'd': case 'D': e.preventDefault();
+          tourEngine.state.yaw += step; tourEngine.render(); placeHotspots(); break;
+        case 'ArrowUp':   case 'w': case 'W': e.preventDefault();
+          tourEngine.state.pitch = tourEngine.clampPitch(tourEngine.state.pitch + step);
+          tourEngine.render(); placeHotspots(); break;
+        case 'ArrowDown': case 's': case 'S': e.preventDefault();
+          tourEngine.state.pitch = tourEngine.clampPitch(tourEngine.state.pitch - step);
+          tourEngine.render(); placeHotspots(); break;
+        case '+': case '=': setTourFov(tourEngine.state.fov - 0.1); break;
+        case '-': case '_': setTourFov(tourEngine.state.fov + 0.1); break;
+        case 'f': case 'F':
+          if(!document.fullscreenElement) stage.requestFullscreen?.();
+          else document.exitFullscreen?.();
+          break;
+        case 'r': case 'R':
+          if(!scenes.find(s=>s.id===activeSceneId)) break;
+          autoRotateActive = !autoRotateActive;
+          btnAutoRotate.classList.toggle('active', autoRotateActive);
+          if(autoRotateActive) startAutoRotate(); else stopAutoRotate();
+          break;
+      }
+    }
+  });
+
+  // ===== 供應商標籤（讀 /api/health）=====
+  (function(){
+    const badge = document.getElementById('ai-provider-badge');
+    if(!badge) return;
+    fetch('/api/health', {signal: AbortSignal.timeout(3000)})
+      .then(r=>r.ok?r.json():null)
+      .then(d=>{
+        if(!d) return;
+        const icons = {gemini:'✦', groq:'▶', claude:'◆', custom:'⬡'};
+        const names = {gemini:'Gemini', groq:'Groq', claude:'Claude', custom:'Custom'};
+        const p = d.provider || 'custom';
+        const icon = icons[p] || '⬡';
+        const name = names[p] || p;
+        const model = (d.model||'').split('/').pop().split('-').slice(0,3).join('-');
+        badge.textContent = icon + ' ' + name + (model?' · '+model:'');
+        badge.className = 'p-' + p;
+        badge.style.display = 'block';
+        badge.title = 'AI 供應商：' + name + '\n模型：' + (d.model||'-') + '\n金鑰已設定：' + (d.key_set?'是':'否（分析功能停用）');
+        if(!d.key_set){
+          badge.style.opacity='0.5';
+          badge.title += '\n⚠ 尚未設定 API 金鑰，AI 分析功能無法使用';
+        }
+      })
+      .catch(()=>{});  // 本機靜態預覽時 /api/health 不存在，靜默忽略
+  })();
+
+  /* =========================================================
+     初始
+  ========================================================= */
+  applyMapTransform();
+  loadFromStorage();
+  if(!STORAGE_AVAILABLE){
+    setTimeout(()=>showToast('本機瀏覽模式：資料不會自動保存，請記得用右上角選單「匯出備份」保存成果'), 700);
+  }
+})();
+</script>
+</body>
+</html>

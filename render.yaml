@@ -1,0 +1,27 @@
+# Render Blueprint — 現勘環景導覽 + AI 分析後端（多供應商可切換版）
+# 使用方式：將此資料夾推上 GitHub，於 Render 點選 "New +" → "Blueprint" 指向此 repo。
+#
+# 切換 AI 供應商：改 AI_PROVIDER，並填入對應金鑰：
+#   gemini → 設 GEMINI_API_KEY（免費額度較寬，預設）  申請：https://aistudio.google.com/apikey
+#   groq   → 設 GROQ_API_KEY  （免費，Llama 4 視覺）   申請：https://console.groq.com
+#   claude → 設 ANTHROPIC_API_KEY（付費，品質最高）    申請：https://console.anthropic.com
+#
+# 三個金鑰可同時填好；要切換供應商時只改 AI_PROVIDER 的值即可，無需改程式或重填金鑰。
+services:
+  - type: web
+    name: panorama-ai
+    runtime: python
+    plan: free
+    buildCommand: pip install -r requirements.txt
+    startCommand: gunicorn app:app --timeout 120 --workers 2
+    envVars:
+      - key: AI_PROVIDER
+        value: gemini          # gemini | groq | claude | custom
+      - key: GEMINI_API_KEY
+        sync: false            # 於 Render 後台手動填入
+      - key: GROQ_API_KEY
+        sync: false            # （選填）要用 Groq 時填
+      - key: ANTHROPIC_API_KEY
+        sync: false            # （選填）要用 Claude 時填
+      - key: PYTHON_VERSION
+        value: "3.11"
