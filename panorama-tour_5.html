@@ -508,7 +508,12 @@
   .target-item.selected{ background:rgba(232,116,59,0.1); }
   .target-thumb{ width:38px; height:24px; border-radius:3px; background:var(--bg-deep) center/cover; flex-shrink:0; border:1px solid var(--line-soft);}
   .target-name{ font-size:12.5px; color:var(--text-hi); }
-  #file-input, #file-input-map, #file-input-epoch{ display:none; }
+  /* 行動裝置（iOS/Safari）上 display:none 的 file input 無法用程式 .click() 開啟相片選取器，
+     會出現「選不了相片」。改用「畫面外但仍渲染」的隱藏方式，確保程式觸發可正常開啟選取器。 */
+  #file-input, #file-input-map, #file-input-epoch, #file-input-point-epoch, #file-input-import{
+    position:absolute; width:1px; height:1px; padding:0; margin:-1px; overflow:hidden;
+    clip:rect(0,0,0,0); white-space:nowrap; border:0; opacity:0;
+  }
 
   #toast{
     position:fixed; bottom:24px; left:50%; transform:translateX(-50%) translateY(20px);
@@ -683,7 +688,7 @@
       </div>
     </div>
   </div>
-  <input type="file" id="file-input-import" accept="application/json" style="display:none;">
+  <input type="file" id="file-input-import" accept="application/json">
 
   <!-- ===== 導覽模式：左側場景清冊 ===== -->
   <aside id="sidebar">
