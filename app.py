@@ -20,19 +20,146 @@
 """
 
 import os
+import io
 import json
+import uuid
 import base64
 import binascii
 
-from flask import Flask, request, jsonify, send_from_directory
+from flask import Flask, request, jsonify, send_from_directory, Response, abort
 
 app = Flask(__name__, static_folder=None)
+app.config["MAX_CONTENT_LENGTH"] = 40 * 1024 * 1024  # 上傳上限 40MB（單張全景圖）
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 INDEX_FILE = "panorama-tour_5.html"
 
 MAX_TOKENS = int(os.environ.get("LLM_MAX_TOKENS", "1500"))
-MAX_IMAGE_BYTES = 4 * 1024 * 1024  # 約 4MB
+MAX_IMAGE_BYTES = 4 * 1024 * 1024  # AI 分析的截圖上限，約 4MB
+
+# =========================================================
+# 雲端資料庫（Cloudflare R2，S3 相容）+ 管理者驗證
+#   公開讀取：GET /api/state、GET /api/asset/<key>
+#   管理者寫入（需密碼）：POST /api/state、POST /api/upload-image
+# 環境變數：
+#   R2_ACCOUNT_ID / R2_ACCESS_KEY_ID / R2_SECRET_ACCESS_KEY / R2_BUCKET
+#   ADMIN_PASSWORD（管理者上傳密碼）
+# =========================================================
+R2_ACCOUNT_ID = os.environ.get("R2_ACCOUNT_ID", "")
+R2_ACCESS_KEY_ID = os.environ.get("R2_ACCESS_KEY_ID", "")
+R2_SECRET_ACCESS_KEY = os.environ.get("R2_SECRET_ACCESS_KEY", "")
+R2_BUCKET = os.environ.get("R2_BUCKET", "")
+ADMIN_PASSWORD = os.environ.get("ADMIN_PASSWORD", "")
+STATE_KEY = "state.json"
+EXT_BY_MIME = {"image/jpeg": "jpg", "image/png": "png", "image/webp": "webp", "image/gif": "gif"}
+
+_s3 = None
+
+
+def storage_ready():
+    return bool(R2_ACCOUNT_ID and R2_ACCESS_KEY_ID and R2_SECRET_ACCESS_KEY and R2_BUCKET)
+
+
+def get_s3():
+    global _s3
+    if _s3 is None:
+        import boto3
+        from botocore.config import Config
+        _s3 = boto3.client(
+            "s3",
+            endpoint_url="https://%s.r2.cloudflarestorage.com" % R2_ACCOUNT_ID,
+            aws_access_key_id=R2_ACCESS_KEY_ID,
+            aws_secret_access_key=R2_SECRET_ACCESS_KEY,
+            region_name="auto",
+            config=Config(signature_version="s3v4"),
+        )
+    return _s3
+
+
+def is_admin(req):
+    return bool(ADMIN_PASSWORD) and req.headers.get("X-Admin-Password", "") == ADMIN_PASSWORD
+
+
+EMPTY_STATE = {"version": 1, "scenes": [], "basemap": None, "points": []}
+
+
+@app.route("/api/admin-check", methods=["POST"])
+def api_admin_check():
+    data = request.get_json(silent=True) or {}
+    ok = bool(ADMIN_PASSWORD) and data.get("password", "") == ADMIN_PASSWORD
+    return jsonify({"ok": ok, "admin_enabled": bool(ADMIN_PASSWORD)})
+
+
+@app.route("/api/state", methods=["GET"])
+def api_get_state():
+    if not storage_ready():
+        return jsonify(EMPTY_STATE)
+    try:
+        obj = get_s3().get_object(Bucket=R2_BUCKET, Key=STATE_KEY)
+        body = obj["Body"].read()
+        return Response(body, mimetype="application/json")
+    except Exception:  # noqa: BLE001  尚無資料時回傳空狀態
+        return jsonify(EMPTY_STATE)
+
+
+@app.route("/api/state", methods=["POST"])
+def api_put_state():
+    if not is_admin(request):
+        return jsonify({"error": "未授權，請以管理者身分登入"}), 401
+    if not storage_ready():
+        return jsonify({"error": "後端尚未設定 R2 儲存環境變數"}), 503
+    data = request.get_json(silent=True)
+    if data is None:
+        return jsonify({"error": "資料格式錯誤"}), 400
+    try:
+        get_s3().put_object(
+            Bucket=R2_BUCKET, Key=STATE_KEY,
+            Body=json.dumps(data).encode("utf-8"),
+            ContentType="application/json",
+        )
+    except Exception as e:  # noqa: BLE001
+        return jsonify({"error": "儲存失敗：" + str(e)}), 502
+    return jsonify({"ok": True})
+
+
+@app.route("/api/upload-image", methods=["POST"])
+def api_upload_image():
+    if not is_admin(request):
+        return jsonify({"error": "未授權，請以管理者身分登入"}), 401
+    if not storage_ready():
+        return jsonify({"error": "後端尚未設定 R2 儲存環境變數"}), 503
+    f = request.files.get("file")
+    if not f:
+        return jsonify({"error": "缺少檔案"}), 400
+    mime = (f.mimetype or "").lower()
+    ext = EXT_BY_MIME.get(mime)
+    if not ext:
+        return jsonify({"error": "不支援的影像格式：" + mime}), 400
+    key = "assets/%s.%s" % (uuid.uuid4().hex, ext)
+    try:
+        get_s3().upload_fileobj(
+            f, R2_BUCKET, key, ExtraArgs={"ContentType": mime},
+        )
+    except Exception as e:  # noqa: BLE001
+        return jsonify({"error": "上傳失敗：" + str(e)}), 502
+    return jsonify({"key": key, "url": "/api/asset/" + key})
+
+
+@app.route("/api/asset/<path:key>", methods=["GET"])
+def api_asset(key):
+    if not storage_ready():
+        abort(404)
+    if ".." in key or key.startswith("/"):
+        abort(400)
+    try:
+        obj = get_s3().get_object(Bucket=R2_BUCKET, Key=key)
+        data = obj["Body"].read()
+        ctype = obj.get("ContentType", "application/octet-stream")
+    except Exception:  # noqa: BLE001
+        abort(404)
+    resp = Response(data, mimetype=ctype)
+    resp.headers["Cache-Control"] = "public, max-age=31536000, immutable"
+    return resp
 
 # ---- 供應商設定表 ----
 PROVIDERS = {
@@ -306,6 +433,8 @@ def health():
         "kind": CFG["kind"],
         "model": CFG["model"],
         "key_set": bool(_api_key()),
+        "storage_ready": storage_ready(),
+        "admin_enabled": bool(ADMIN_PASSWORD),
     })
 
 

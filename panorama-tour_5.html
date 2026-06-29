@@ -596,6 +596,45 @@
   #ai-provider-badge.p-claude{ color:var(--accent); border-color:var(--accent-dim); }
   #ai-provider-badge.p-custom{ color:var(--text-mid); }
 
+  /* ===== 管理者登入 / 唯讀瀏覽 ===== */
+  #btn-admin-login{
+    position:fixed; bottom:14px; left:14px; z-index:201;
+    display:flex; align-items:center; gap:6px; cursor:pointer;
+    font-family:var(--mono); font-size:10.5px; font-weight:700; color:var(--text-mid);
+    background:rgba(29,33,38,0.85); border:1px solid var(--line); padding:6px 11px;
+    border-radius:7px; backdrop-filter:blur(6px);
+  }
+  #btn-admin-login:hover{ color:var(--text-hi); border-color:var(--accent-dim); }
+  #btn-admin-login svg{ width:13px; height:13px; }
+  body.is-admin #btn-admin-login{ color:var(--ok); border-color:#2f5c47; }
+  @media (max-width:720px){ #btn-admin-login{ bottom:auto; top:60px; left:14px; } }
+
+  #save-server-status{
+    position:fixed; bottom:14px; left:120px; z-index:201; display:none;
+    font-family:var(--mono); font-size:10px; color:var(--text-low);
+    background:rgba(29,33,38,0.85); border:1px solid var(--line); padding:6px 10px; border-radius:7px;
+  }
+  body.is-admin #save-server-status{ display:block; }
+  @media (max-width:720px){ body.is-admin #save-server-status{ top:60px; bottom:auto; left:90px; } }
+
+  /* 唯讀瀏覽（非管理者）時隱藏所有編輯入口 */
+  body:not(.is-admin) #btn-add-scene,
+  body:not(.is-admin) #data-toolbar,
+  body:not(.is-admin) #btn-hotspot-mode,
+  body:not(.is-admin) #btn-ai-analyze,
+  body:not(.is-admin) #btn-compare-ai,
+  body:not(.is-admin) .scene-edit,
+  body:not(.is-admin) .scene-del,
+  body:not(.is-admin) #btn-set-basemap,
+  body:not(.is-admin) #btn-place-point,
+  body:not(.is-admin) #btn-edit-point,
+  body:not(.is-admin) #btn-delete-point,
+  body:not(.is-admin) #btn-add-epoch,
+  body:not(.is-admin) .epoch-add-tab,
+  body:not(.is-admin) .epoch-del-btn,
+  body:not(.is-admin) #btn-calibrate,
+  body:not(.is-admin) .hotspot-del-btn{ display:none !important; }
+
   /* ===== AI 分析 ===== */
   #btn-compare-ai{ }
   .ai-modal .modal{ width:460px; }
@@ -645,6 +684,13 @@
 
   <!-- ===== 模式切換 ===== -->
   <div id="ai-provider-badge"></div>
+
+  <button id="btn-admin-login" title="管理者登入後可上傳／編輯資料">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0110 0v4"/></svg>
+    <span id="admin-login-label">瀏覽模式</span>
+  </button>
+  <div id="save-server-status">已同步至雲端</div>
+
   <div id="mode-switch">
     <div class="mode-btn active" id="mode-tour" data-mode="tour">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M2 12h20M12 2a15 15 0 010 20M12 2a15 15 0 000 20"/></svg>
@@ -1085,6 +1131,21 @@
   </div>
 </div>
 
+<!-- ===== 管理者登入 Modal ===== -->
+<div class="modal-overlay" id="modal-admin">
+  <div class="modal" style="width:340px;">
+    <p class="modal-title">管理者登入</p>
+    <p class="modal-sub">輸入管理者密碼後即可上傳與編輯環景資料庫。一般訪客無需登入，可直接瀏覽。</p>
+    <label class="field-label">管理者密碼</label>
+    <input class="field-input" id="input-admin-pwd" type="password" placeholder="請輸入密碼" autocomplete="current-password">
+    <p id="admin-login-err" class="ai-error" style="display:none; margin:-8px 0 14px;">密碼錯誤，請重試。</p>
+    <div class="modal-actions">
+      <button class="btn btn-ghost" id="btn-cancel-admin">取消</button>
+      <button class="btn btn-primary" id="btn-confirm-admin" style="flex:none; padding:8px 18px;">登入</button>
+    </div>
+  </div>
+</div>
+
 <!-- ===== AI 分析結果 Modal ===== -->
 <div class="modal-overlay ai-modal" id="modal-ai">
   <div class="modal">
@@ -1132,6 +1193,41 @@
     const reader=new FileReader();
     reader.onload=e=>cb(e.target.result);
     reader.readAsDataURL(file);
+  }
+
+  /* =========================================================
+     雲端資料庫 + 管理者驗證（共用層）
+       公開瀏覽：開啟即從 /api/state 載入共用資料
+       管理者登入後：上傳圖片到 R2、儲存 state 到雲端
+  ========================================================= */
+  const serverState = { storageReady:false, adminEnabled:false, hasBackend:false };
+  let isAdmin = false;
+  let adminPassword = '';
+
+  function setAdminUI(){
+    document.body.classList.toggle('is-admin', isAdmin);
+    const label = document.getElementById('admin-login-label');
+    if(label) label.textContent = isAdmin ? '管理模式' : '瀏覽模式';
+  }
+
+  // 上傳單一圖片檔到 R2，回傳同源資產 URL（/api/asset/<key>）
+  async function uploadImage(file){
+    const fd = new FormData();
+    fd.append('file', file);
+    const res = await fetch('/api/upload-image', {
+      method:'POST', headers:{'X-Admin-Password': adminPassword}, body: fd
+    });
+    const data = await res.json().catch(()=>({error:'回應解析失敗'}));
+    if(!res.ok) throw new Error(data.error || ('HTTP '+res.status));
+    return data.url; // '/api/asset/<key>'
+  }
+
+  // 決定一張新圖片的 src：有雲端且為管理者 → 上傳取得 URL；否則退回本機 dataURL（不會永久保存）
+  async function resolveImageSrc(file, dataUrl){
+    if(serverState.storageReady && isAdmin && file){
+      return await uploadImage(file);
+    }
+    return dataUrl;
   }
 
   /* =========================================================
@@ -1574,21 +1670,26 @@
   document.getElementById('btn-cancel-add').addEventListener('click', ()=>modalAdd.classList.remove('show'));
   modalAdd.addEventListener('click', e=>{ if(e.target===modalAdd) modalAdd.classList.remove('show'); });
 
-  setupUploadZone(uploadZone, fileInput, dataUrl=>{
-    pendingUploadDataUrl=dataUrl;
+  let pendingUploadFile = null;
+  setupUploadZone(uploadZone, fileInput, (dataUrl, file)=>{
+    pendingUploadDataUrl=dataUrl; pendingUploadFile=file;
     uploadPreview.style.backgroundImage=`url('${dataUrl}')`;
     uploadPreview.style.display='block';
   }, fileName=>{ if(!inputSceneName.value) inputSceneName.value=fileName; });
 
-  document.getElementById('btn-confirm-add').addEventListener('click', ()=>{
+  document.getElementById('btn-confirm-add').addEventListener('click', async ()=>{
     if(!pendingUploadDataUrl){ showToast('請先選擇全景圖檔案'); return; }
     const name = inputSceneName.value.trim() || ('場景 '+(scenes.length+1));
     const note = inputSceneNote.value.trim();
+    let src;
+    showToast('處理中…');
+    try{ src = await resolveImageSrc(pendingUploadFile, pendingUploadDataUrl); }
+    catch(e){ showToast('上傳失敗：'+e.message); return; }
     const img = new Image();
     img.onload=()=>{
       const ratio = img.width/img.height;
       const id = 'scene-'+Date.now()+'-'+Math.floor(Math.random()*1000);
-      scenes.push({ id, name, note, img, src:pendingUploadDataUrl, hotspots:[] });
+      scenes.push({ id, name, note, img, src, hotspots:[] });
       renderSceneList(); loadScene(id);
       modalAdd.classList.remove('show');
       markSceneDirty(id);
@@ -1596,7 +1697,7 @@
       showToast(Math.abs(ratio-2)>0.25 ? '提醒：圖片比例非標準 2:1，顯示可能略有變形' : '場景已新增');
     };
     img.onerror=()=>showToast('圖片載入失敗，請確認檔案格式');
-    img.src = pendingUploadDataUrl;
+    img.src = src;
   });
 
   const btnHotspotMode = document.getElementById('btn-hotspot-mode');
@@ -1702,7 +1803,7 @@
     function handle(file){
       if(!file.type.startsWith('image/')){ showToast('請上傳圖片檔案'); return; }
       readFileAsDataUrl(file, dataUrl=>{
-        onLoaded(dataUrl);
+        onLoaded(dataUrl, file);
         if(onName) onName(file.name.replace(/\.[^.]+$/,''));
       });
     }
@@ -1991,8 +2092,9 @@
   const uploadPreviewMap = document.getElementById('upload-preview-map');
   let pendingMapDataUrl = null;
 
-  setupUploadZone(uploadZoneMap, fileInputMap, dataUrl=>{
-    pendingMapDataUrl = dataUrl;
+  let pendingMapFile = null;
+  setupUploadZone(uploadZoneMap, fileInputMap, (dataUrl, file)=>{
+    pendingMapDataUrl = dataUrl; pendingMapFile = file;
     uploadPreviewMap.style.backgroundImage = `url('${dataUrl}')`;
     uploadPreviewMap.style.display='block';
   }, fileName=>{
@@ -2002,16 +2104,20 @@
 
   document.getElementById('btn-cancel-map').addEventListener('click', ()=>modalBasemap.classList.remove('show'));
   modalBasemap.addEventListener('click', e=>{ if(e.target===modalBasemap) modalBasemap.classList.remove('show'); });
-  document.getElementById('btn-confirm-map').addEventListener('click', ()=>{
+  document.getElementById('btn-confirm-map').addEventListener('click', async ()=>{
     if(!pendingMapDataUrl && !basemap){ showToast('請先選擇底圖圖片'); return; }
     const name = document.getElementById('input-map-name').value.trim() || '未命名底圖';
     if(pendingMapDataUrl){
+      let src;
+      showToast('處理中…');
+      try{ src = await resolveImageSrc(pendingMapFile, pendingMapDataUrl); }
+      catch(e){ showToast('上傳失敗：'+e.message); return; }
       const img = new Image();
       img.onload = ()=>{
-        basemap = { src:pendingMapDataUrl, img, name };
+        basemap = { src, img, name };
         mapSub.textContent = name + ` · ${img.width}×${img.height}px`;
         mapNoBase.classList.add('hidden');
-        mapContent.innerHTML = `<img src="${pendingMapDataUrl}" draggable="false">`;
+        mapContent.innerHTML = `<img src="${src}" draggable="false">`;
         fitMapToWrap();
         renderMapPins();
         modalBasemap.classList.remove('show');
@@ -2020,7 +2126,7 @@
         showToast('底圖已設定');
       };
       img.onerror = ()=>showToast('圖片載入失敗');
-      img.src = pendingMapDataUrl;
+      img.src = src;
     } else {
       basemap.name = name;
       mapSub.textContent = name + ` · ${basemap.img.width}×${basemap.img.height}px`;
@@ -2035,6 +2141,7 @@
   const modalPoint = document.getElementById('modal-point');
   let pendingPointPos = null;
   let pendingPointEpochDataUrl = null;
+  let pendingPointEpochFile = null;
   const uploadZonePointEpoch = document.getElementById('upload-zone-point-epoch');
   const uploadPreviewPointEpoch = document.getElementById('upload-preview-point-epoch');
   const pointEpochDateRow = document.getElementById('point-epoch-date-row');
@@ -2044,7 +2151,7 @@
     document.getElementById('input-point-note').value='';
     document.getElementById('input-point-epoch-year').value='';
     document.getElementById('input-point-epoch-month').value='';
-    pendingPointEpochDataUrl = null;
+    pendingPointEpochDataUrl = null; pendingPointEpochFile = null;
     uploadPreviewPointEpoch.style.display='none';
     pointEpochDateRow.style.display='none';
     const coordRow = document.getElementById('point-coord-row');
@@ -2059,8 +2166,8 @@
     }
     modalPoint.classList.add('show');
   }
-  setupUploadZone(uploadZonePointEpoch, document.getElementById('file-input-point-epoch'), dataUrl=>{
-    pendingPointEpochDataUrl = dataUrl;
+  setupUploadZone(uploadZonePointEpoch, document.getElementById('file-input-point-epoch'), (dataUrl, file)=>{
+    pendingPointEpochDataUrl = dataUrl; pendingPointEpochFile = file;
     uploadPreviewPointEpoch.style.backgroundImage = `url('${dataUrl}')`;
     uploadPreviewPointEpoch.style.display='block';
     pointEpochDateRow.style.display='flex';
@@ -2074,7 +2181,7 @@
     }
   });
   modalPoint.addEventListener('click', e=>{ if(e.target===modalPoint) modalPoint.classList.remove('show'); });
-  document.getElementById('btn-confirm-point').addEventListener('click', ()=>{
+  document.getElementById('btn-confirm-point').addEventListener('click', async ()=>{
     const name = document.getElementById('input-point-name').value.trim() || ('點位 '+(points.length+1));
     const note = document.getElementById('input-point-note').value.trim();
     const id = 'pt-'+Date.now();
@@ -2087,10 +2194,18 @@
       if(!epochYear){ showToast('已選擇全景圖，請填寫年份'); return; }
     }
 
+    // 若有圖，先上傳取得永久 src
+    let epochSrc = pendingPointEpochDataUrl;
+    if(pendingPointEpochDataUrl){
+      showToast('處理中…');
+      try{ epochSrc = await resolveImageSrc(pendingPointEpochFile, pendingPointEpochDataUrl); }
+      catch(e){ showToast('上傳失敗：'+e.message); return; }
+    }
+
     function finalizePoint(img){
       const epochs = [];
       if(img){
-        epochs.push({ id:'ep-'+Date.now(), year:epochYear, month:epochMonth, note:'', img, src:pendingPointEpochDataUrl, yawOffset:0 });
+        epochs.push({ id:'ep-'+Date.now(), year:epochYear, month:epochMonth, note:'', img, src:epochSrc, yawOffset:0 });
       }
       if(pendingPointPos.kind === 'geo'){
         const latInput = document.getElementById('input-point-lat');
@@ -2118,7 +2233,7 @@
       const img = new Image();
       img.onload = ()=>finalizePoint(img);
       img.onerror = ()=>showToast('全景圖載入失敗，請確認檔案格式');
-      img.src = pendingPointEpochDataUrl;
+      img.src = epochSrc;
     } else {
       finalizePoint(null);
     }
@@ -2281,34 +2396,39 @@
   const fileInputEpoch = document.getElementById('file-input-epoch');
   const uploadPreviewEpoch = document.getElementById('upload-preview-epoch');
   let pendingEpochDataUrl = null;
+  let pendingEpochFile = null;
 
   function openEpochModal(){
     if(!activePointId){ showToast('請先選擇一個點位'); return; }
-    pendingEpochDataUrl=null;
+    pendingEpochDataUrl=null; pendingEpochFile=null;
     uploadPreviewEpoch.style.display='none';
     document.getElementById('input-epoch-year').value='';
     document.getElementById('input-epoch-month').value='';
     document.getElementById('input-epoch-note').value='';
     modalEpoch.classList.add('show');
   }
-  setupUploadZone(uploadZoneEpoch, fileInputEpoch, dataUrl=>{
-    pendingEpochDataUrl = dataUrl;
+  setupUploadZone(uploadZoneEpoch, fileInputEpoch, (dataUrl, file)=>{
+    pendingEpochDataUrl = dataUrl; pendingEpochFile = file;
     uploadPreviewEpoch.style.backgroundImage = `url('${dataUrl}')`;
     uploadPreviewEpoch.style.display='block';
   });
   document.getElementById('btn-cancel-epoch').addEventListener('click', ()=>modalEpoch.classList.remove('show'));
   modalEpoch.addEventListener('click', e=>{ if(e.target===modalEpoch) modalEpoch.classList.remove('show'); });
-  document.getElementById('btn-confirm-epoch').addEventListener('click', ()=>{
+  document.getElementById('btn-confirm-epoch').addEventListener('click', async ()=>{
     if(!pendingEpochDataUrl){ showToast('請先選擇全景圖檔案'); return; }
     const year = document.getElementById('input-epoch-year').value.trim();
     if(!year){ showToast('請輸入年份'); return; }
     const month = document.getElementById('input-epoch-month').value.trim();
     const note = document.getElementById('input-epoch-note').value.trim();
+    let src;
+    showToast('處理中…');
+    try{ src = await resolveImageSrc(pendingEpochFile, pendingEpochDataUrl); }
+    catch(e){ showToast('上傳失敗：'+e.message); return; }
     const img = new Image();
     img.onload = ()=>{
       const p = points.find(x=>x.id===activePointId);
       const id = 'ep-'+Date.now();
-      p.epochs.push({ id, year, month, note, img, src:pendingEpochDataUrl, yawOffset:0 });
+      p.epochs.push({ id, year, month, note, img, src, yawOffset:0 });
       pointSub.textContent = `${p.epochs.length} 個時期${p.note ? ' · '+p.note : ''}`;
       renderEpochTabs();
       renderMapPins();
@@ -2321,7 +2441,7 @@
       showToast('時期全景已加入');
     };
     img.onerror = ()=>showToast('圖片載入失敗');
-    img.src = pendingEpochDataUrl;
+    img.src = src;
   });
 
   function deleteEpoch(epochId){
@@ -2625,20 +2745,48 @@
   function markEpochDirty(pointId, epochId){ dirtyEpochs.add(pointId+'|'+epochId); }
   function markBasemapDirty(){ basemapDirty = true; }
 
+  // ---- 雲端儲存：管理者異動資料後，將整份 state 上傳到 /api/state（圖片已是 R2 URL，state 很輕量）----
+  const saveServerStatus = document.getElementById('save-server-status');
   function scheduleSave(){
-    if(!STORAGE_AVAILABLE){
-      // 不支援持久化儲存的環境：清空待存標記，避免記憶體無謂累積，並提示使用者改用匯出備份
-      dirtyScenes.clear(); dirtyPoints.clear(); dirtyEpochs.clear();
-      deletedSceneIds.clear(); deletedPointIds.clear(); deletedEpochKeys.clear();
-      basemapDirty = false;
-      saveDot.classList.remove('saving');
-      saveStatusText.textContent = '本機瀏覽（未連線儲存）';
-      return;
-    }
-    saveDot.classList.add('saving');
-    saveStatusText.textContent = '儲存中…';
+    // 清空舊版本機儲存的待存標記（已不使用 window.storage）
+    dirtyScenes.clear(); dirtyPoints.clear(); dirtyEpochs.clear();
+    deletedSceneIds.clear(); deletedPointIds.clear(); deletedEpochKeys.clear();
+    basemapDirty = false;
+    if(!(serverState.storageReady && isAdmin)) return; // 訪客或無雲端：不儲存
+    if(saveServerStatus) saveServerStatus.textContent = '儲存中…';
     clearTimeout(saveTimer);
-    saveTimer = setTimeout(doSave, 900);
+    saveTimer = setTimeout(saveStateToServer, 800);
+  }
+
+  async function saveStateToServer(){
+    try{
+      const res = await fetch('/api/state', {
+        method:'POST',
+        headers:{'Content-Type':'application/json','X-Admin-Password':adminPassword},
+        body: JSON.stringify(serializeState())
+      });
+      if(!res.ok){ const d=await res.json().catch(()=>({})); throw new Error(d.error||('HTTP '+res.status)); }
+      if(saveServerStatus){ saveServerStatus.textContent='已同步至雲端'; }
+    }catch(e){
+      if(saveServerStatus){ saveServerStatus.textContent='儲存失敗'; }
+      showToast('雲端儲存失敗：'+e.message);
+    }
+  }
+
+  async function loadFromServer(){
+    const overlay = document.getElementById('loading-overlay');
+    overlay.classList.remove('hidden');
+    try{
+      const res = await fetch('/api/state', {signal: AbortSignal.timeout(60000)});
+      if(res.ok){
+        const data = await res.json();
+        await restoreState(data);
+      }
+    }catch(e){
+      showToast('載入雲端資料失敗，請稍後重新整理');
+    }finally{
+      overlay.classList.add('hidden');
+    }
   }
 
   async function doSave(){
@@ -2891,6 +3039,7 @@
       showToast('匯入中，請稍候…');
       await restoreState(data);
       await fullOverwriteSave();
+      scheduleSave(); // 同步至雲端（管理者）
       showToast('備份已匯入');
     } catch(err){
       showToast('匯入失敗，請確認檔案格式正確');
@@ -2916,6 +3065,7 @@
     pointActive.classList.remove('show');
     pointEmpty.classList.remove('hidden');
     await fullOverwriteSave();
+    scheduleSave(); // 同步清空至雲端（管理者）
     showToast('所有資料已清空');
   });
 
@@ -3130,40 +3280,96 @@ ${SHARE_BODY}
     }
   });
 
-  // ===== 供應商標籤（讀 /api/health）=====
-  (function(){
+  // ===== 供應商標籤 =====
+  function updateProviderBadge(d){
     const badge = document.getElementById('ai-provider-badge');
     if(!badge) return;
-    fetch('/api/health', {signal: AbortSignal.timeout(3000)})
-      .then(r=>r.ok?r.json():null)
-      .then(d=>{
-        if(!d) return;
-        const icons = {gemini:'✦', groq:'▶', claude:'◆', custom:'⬡'};
-        const names = {gemini:'Gemini', groq:'Groq', claude:'Claude', custom:'Custom'};
-        const p = d.provider || 'custom';
-        const icon = icons[p] || '⬡';
-        const name = names[p] || p;
-        const model = (d.model||'').split('/').pop().split('-').slice(0,3).join('-');
-        badge.textContent = icon + ' ' + name + (model?' · '+model:'');
-        badge.className = 'p-' + p;
-        badge.style.display = 'block';
-        badge.title = 'AI 供應商：' + name + '\n模型：' + (d.model||'-') + '\n金鑰已設定：' + (d.key_set?'是':'否（分析功能停用）');
-        if(!d.key_set){
-          badge.style.opacity='0.5';
-          badge.title += '\n⚠ 尚未設定 API 金鑰，AI 分析功能無法使用';
-        }
-      })
-      .catch(()=>{});  // 本機靜態預覽時 /api/health 不存在，靜默忽略
-  })();
+    const icons = {gemini:'✦', groq:'▶', claude:'◆', custom:'⬡'};
+    const names = {gemini:'Gemini', groq:'Groq', claude:'Claude', custom:'Custom'};
+    const p = d.provider || 'custom';
+    const icon = icons[p] || '⬡';
+    const name = names[p] || p;
+    const model = (d.model||'').split('/').pop().split('-').slice(0,3).join('-');
+    badge.textContent = icon + ' ' + name + (model?' · '+model:'');
+    badge.className = 'p-' + p;
+    badge.style.display = 'block';
+    badge.title = 'AI 供應商：' + name + '\n模型：' + (d.model||'-') + '\n金鑰已設定：' + (d.key_set?'是':'否');
+    if(!d.key_set){ badge.style.opacity='0.5'; badge.title += '\n⚠ 尚未設定 API 金鑰'; }
+  }
+
+  // ===== 管理者登入 =====
+  const modalAdmin = document.getElementById('modal-admin');
+  const inputAdminPwd = document.getElementById('input-admin-pwd');
+  const adminLoginErr = document.getElementById('admin-login-err');
+
+  async function tryAdminLogin(pwd){
+    const res = await fetch('/api/admin-check', {
+      method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({password:pwd})
+    });
+    const d = await res.json().catch(()=>({}));
+    return !!d.ok;
+  }
+  function logoutAdmin(){
+    isAdmin=false; adminPassword='';
+    try{ localStorage.removeItem('panoAdminPwd'); }catch(e){}
+    setAdminUI(); showToast('已登出，回到瀏覽模式');
+  }
+
+  document.getElementById('btn-admin-login').addEventListener('click', ()=>{
+    if(isAdmin){ if(confirm('要登出管理模式嗎？')) logoutAdmin(); return; }
+    if(!serverState.adminEnabled){ showToast('此網站尚未啟用管理者功能（需於後端設定 ADMIN_PASSWORD）'); return; }
+    inputAdminPwd.value=''; adminLoginErr.style.display='none';
+    modalAdmin.classList.add('show'); setTimeout(()=>inputAdminPwd.focus(), 50);
+  });
+  document.getElementById('btn-cancel-admin').addEventListener('click', ()=>modalAdmin.classList.remove('show'));
+  modalAdmin.addEventListener('click', e=>{ if(e.target===modalAdmin) modalAdmin.classList.remove('show'); });
+  document.getElementById('btn-confirm-admin').addEventListener('click', async ()=>{
+    const pwd = inputAdminPwd.value;
+    if(!pwd) return;
+    let ok=false;
+    try{ ok = await tryAdminLogin(pwd); }catch(e){}
+    if(ok){
+      isAdmin=true; adminPassword=pwd;
+      try{ localStorage.setItem('panoAdminPwd', pwd); }catch(e){}
+      setAdminUI(); modalAdmin.classList.remove('show'); showToast('已進入管理模式，可上傳與編輯');
+    } else {
+      adminLoginErr.style.display='block';
+    }
+  });
+  inputAdminPwd.addEventListener('keydown', e=>{ if(e.key==='Enter') document.getElementById('btn-confirm-admin').click(); });
 
   /* =========================================================
-     初始
+     初始開機
   ========================================================= */
-  applyMapTransform();
-  loadFromStorage();
-  if(!STORAGE_AVAILABLE){
-    setTimeout(()=>showToast('本機瀏覽模式：資料不會自動保存，請記得用右上角選單「匯出備份」保存成果'), 700);
+  async function boot(){
+    applyMapTransform();
+    // 讀後端狀態（供應商、雲端、管理）
+    try{
+      const r = await fetch('/api/health', {signal: AbortSignal.timeout(5000)});
+      if(r.ok){
+        const d = await r.json();
+        serverState.hasBackend = true;
+        serverState.storageReady = !!d.storage_ready;
+        serverState.adminEnabled = !!d.admin_enabled;
+        updateProviderBadge(d);
+      }
+    }catch(e){ /* 本機靜態預覽：無後端，靜默 */ }
+
+    // 自動還原管理者登入
+    if(serverState.adminEnabled){
+      let saved=''; try{ saved = localStorage.getItem('panoAdminPwd')||''; }catch(e){}
+      if(saved){ try{ if(await tryAdminLogin(saved)){ isAdmin=true; adminPassword=saved; } }catch(e){} }
+    }
+    setAdminUI();
+
+    // 載入共用資料庫
+    if(serverState.hasBackend){
+      await loadFromServer();
+    } else if(typeof loadFromStorage==='function'){
+      loadFromStorage(); // 本機靜態預覽 fallback
+    }
   }
+  boot();
 })();
 </script>
 </body>

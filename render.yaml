@@ -23,5 +23,16 @@ services:
         sync: false            # （選填）要用 Groq 時填
       - key: ANTHROPIC_API_KEY
         sync: false            # （選填）要用 Claude 時填
+      # ---- 雲端資料庫（Cloudflare R2）+ 管理者上傳 ----
+      - key: ADMIN_PASSWORD
+        sync: false            # 管理者上傳密碼（自訂一組）
+      - key: R2_ACCOUNT_ID
+        sync: false            # Cloudflare 帳號 ID
+      - key: R2_ACCESS_KEY_ID
+        sync: false            # R2 API Token 的 Access Key ID
+      - key: R2_SECRET_ACCESS_KEY
+        sync: false            # R2 API Token 的 Secret Access Key
+      - key: R2_BUCKET
+        sync: false            # R2 儲存桶名稱（例：panorama-data）
       - key: PYTHON_VERSION
         value: "3.11"
