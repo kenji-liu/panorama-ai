@@ -215,7 +215,7 @@
     position:absolute; top:44px; left:50%; transform:translateX(-50%);
     font-family:var(--mono); font-size:10.5px; white-space:nowrap; color:var(--text-hi);
     background:rgba(20,22,25,0.9); border:1px solid var(--line); padding:3px 8px; border-radius:5px;
-    opacity:0; pointer-events:none; transition:opacity .15s; backdrop-filter:blur(4px);
+    opacity:.92; pointer-events:none; transition:opacity .15s; backdrop-filter:blur(4px);
   }
   .hotspot:hover .hotspot-label{ opacity:1; }
 
@@ -1734,7 +1734,7 @@
       card.className='scene-card'+(s.id===activeSceneId?' active':'');
       card.innerHTML = `
         <div class="scene-idx">${String(i+1).padStart(2,'0')}</div>
-        <div class="scene-thumb" style="background-image:url('${s.src}')"></div>
+        <div class="scene-thumb" style="background-image:url('${s.thumb||s.src}')"></div>
         <div class="scene-meta">
           <div class="scene-name">${s.isPrivate?'🔒 ':''}${escapeHtml(s.name)}</div>
           <div class="scene-tag">${s.hotspots.length} 熱點${s.note?' · '+escapeHtml(s.note):''}</div>
@@ -1752,17 +1752,25 @@
     });
   }
 
-  function loadScene(id, transitionLabel){
+  async function loadScene(id, transitionLabel){
     const scene = scenes.find(s=>s.id===id);
     if(!scene) return;
     activeSceneId=id;
-    tourEngine.setImage(scene.img);
-    setTourFov(Math.PI/2);
     sceneTitleEl.textContent = scene.name;
     sceneEyebrowEl.textContent = transitionLabel ? ('→ '+transitionLabel) : ('SCENE / '+(scenes.findIndex(s=>s.id===id)+1).toString().padStart(2,'0'));
     sceneCoordsEl.textContent = scene.note ? scene.note : 'EQUIRECTANGULAR · NO METADATA';
     emptyStage.classList.add('hidden');
     renderSceneList();
+    if(!scene.img){
+      // 場景影像很大，改為進入該場景時才下載
+      showToast('載入場景影像中…');
+      scene.img = await loadImageAsync(scene.src);
+      if(!scene.img){ showToast('影像載入失敗，請稍後再試'); return; }
+      if(activeSceneId !== id) return; // 載入期間已跳到別的場景
+    }
+    tourEngine.setImage(scene.img);
+    if(Number.isFinite(scene.startYaw)) tourEngine.state.yaw = scene.startYaw; // 進場時朝向動線前進方向
+    setTourFov(Math.PI/2);
     tourEngine.render(); placeHotspots();
   }
 
@@ -2862,7 +2870,7 @@
       savedAt: new Date().toISOString(),
       analysisRecords,
       scenes: scenes.map(s=>({
-        id:s.id, name:s.name, note:s.note, src:s.src, isPrivate:!!s.isPrivate,
+        id:s.id, name:s.name, note:s.note, src:s.src, thumb:s.thumb||undefined, startYaw:Number.isFinite(s.startYaw)?s.startYaw:undefined, isPrivate:!!s.isPrivate,
         hotspots: s.hotspots.map(h=>({ id:h.id, yaw:h.yaw, pitch:h.pitch, targetId:h.targetId, label:h.label }))
       })),
       basemap: basemap ? { src:basemap.src, name:basemap.name } : null,
@@ -2893,9 +2901,8 @@
     // 場景
     scenes = [];
     for(const s of (data.scenes||[])){
-      const img = await loadImageAsync(s.src);
-      if(!img) continue;
-      scenes.push({ id:s.id, name:s.name, note:s.note, img, src:s.src, isPrivate:!!s.isPrivate, hotspots:s.hotspots||[] });
+      // 不在開機時下載全景大圖；進入該場景時才載入（見 loadScene）
+      scenes.push({ id:s.id, name:s.name, note:s.note, img:null, src:s.src, thumb:s.thumb, startYaw:s.startYaw, isPrivate:!!s.isPrivate, hotspots:s.hotspots||[] });
     }
     renderSceneList();
     if(scenes.length){ loadScene(scenes[0].id); }

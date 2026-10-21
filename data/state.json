@@ -1,6 +1,143 @@
 {
  "version": 1,
- "scenes": [],
+ "scenes": [
+  {
+   "id": "sc-52mWd",
+   "name": "里港大橋下游",
+   "note": "最新影像 113/06/19",
+   "src": "/data/assets/52mWd.jpg",
+   "thumb": "/data/assets/t_52mWd.jpg",
+   "isPrivate": false,
+   "hotspots": [
+    {
+     "id": "hs-52mWd-down",
+     "yaw": -1.7593,
+     "pitch": -0.12,
+     "targetId": "sc-L8K4R",
+     "label": "往下游：里嶺大橋上游"
+    }
+   ],
+   "startYaw": -1.7593
+  },
+  {
+   "id": "sc-L8K4R",
+   "name": "里嶺大橋上游",
+   "note": "最新影像 115/10/08",
+   "src": "/data/assets/L8K4R.jpg",
+   "thumb": "/data/assets/t_L8K4R.jpg",
+   "isPrivate": false,
+   "hotspots": [
+    {
+     "id": "hs-L8K4R-down",
+     "yaw": 0.3142,
+     "pitch": -0.12,
+     "targetId": "sc-hMbdw",
+     "label": "往下游：高屏溪斜張橋下游"
+    },
+    {
+     "id": "hs-L8K4R-up",
+     "yaw": -2.3248,
+     "pitch": -0.12,
+     "targetId": "sc-52mWd",
+     "label": "往上游：里港大橋下游"
+    }
+   ],
+   "startYaw": 0.3142
+  },
+  {
+   "id": "sc-hMbdw",
+   "name": "高屏溪斜張橋下游",
+   "note": "最新影像 114/06/19",
+   "src": "/data/assets/hMbdw.jpg",
+   "thumb": "/data/assets/t_hMbdw.jpg",
+   "isPrivate": false,
+   "hotspots": [
+    {
+     "id": "hs-hMbdw-down",
+     "yaw": 0.1257,
+     "pitch": -0.12,
+     "targetId": "sc-L8crR",
+     "label": "往下游：高屏大橋下游"
+    },
+    {
+     "id": "hs-hMbdw-up",
+     "yaw": -2.3876,
+     "pitch": -0.12,
+     "targetId": "sc-L8K4R",
+     "label": "往上游：里嶺大橋上游"
+    }
+   ],
+   "startYaw": 0.1257
+  },
+  {
+   "id": "sc-L8crR",
+   "name": "高屏大橋下游",
+   "note": "最新影像 115/10/08",
+   "src": "/data/assets/L8crR.jpg",
+   "thumb": "/data/assets/t_L8crR.jpg",
+   "isPrivate": false,
+   "hotspots": [
+    {
+     "id": "hs-L8crR-down",
+     "yaw": 1.2566,
+     "pitch": -0.12,
+     "targetId": "sc-hv4SS",
+     "label": "往下游：萬大橋下游"
+    },
+    {
+     "id": "hs-L8crR-up",
+     "yaw": -1.2566,
+     "pitch": -0.12,
+     "targetId": "sc-hMbdw",
+     "label": "往上游：高屏溪斜張橋下游"
+    }
+   ],
+   "startYaw": 1.2566
+  },
+  {
+   "id": "sc-hv4SS",
+   "name": "萬大橋下游",
+   "note": "最新影像 114/03/08",
+   "src": "/data/assets/hv4SS.jpg",
+   "thumb": "/data/assets/t_hv4SS.jpg",
+   "isPrivate": false,
+   "hotspots": [
+    {
+     "id": "hs-hv4SS-down",
+     "yaw": 2.7018,
+     "pitch": -0.12,
+     "targetId": "sc-L8cSt",
+     "label": "往下游：萬丹堰／固床工下游"
+    },
+    {
+     "id": "hs-hv4SS-up",
+     "yaw": -2.3876,
+     "pitch": -0.12,
+     "targetId": "sc-L8crR",
+     "label": "往上游：高屏大橋下游"
+    }
+   ],
+   "startYaw": 2.7018
+  },
+  {
+   "id": "sc-L8cSt",
+   "name": "萬丹堰／固床工下游",
+   "note": "最新影像 115/10/08",
+   "src": "/data/assets/L8cSt.jpg",
+   "thumb": "/data/assets/t_L8cSt.jpg",
+   "isPrivate": false,
+   "hotspots": [
+    {
+     "id": "hs-L8cSt-up",
+     "yaw": 0.754,
+     "pitch": -0.12,
+     "targetId": "sc-hv4SS",
+     "label": "往上游：萬大橋下游"
+    }
+   ],
+   "startYaw": 0.754
+  }
+ ],
  "basemap": null,
  "points": [
   {
