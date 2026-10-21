@@ -377,10 +377,10 @@
   #point-header .ttl{ font-size:15px; font-weight:700; }
   #point-header .sub{ font-family:var(--mono); font-size:10.5px; color:var(--text-low); margin-top:3px; }
 
-  #epoch-tabs{ display:flex; gap:4px; overflow-x:auto; padding-bottom:0; }
-  #epoch-tabs::-webkit-scrollbar{ height:0; }
+  /* 時期多時自動換行，確保每個日期都點得到（原本單行橫捲且隱藏捲軸，最右邊的日期會被切掉） */
+  #epoch-tabs{ display:flex; flex-wrap:wrap; gap:0 2px; padding-bottom:0; }
   .epoch-tab{
-    font-family:var(--mono); font-size:12px; font-weight:600; padding:9px 14px; cursor:pointer;
+    font-family:var(--mono); font-size:12px; font-weight:600; padding:9px 11px; cursor:pointer;
     color:var(--text-mid); border-bottom:2px solid transparent; white-space:nowrap; flex-shrink:0;
     display:flex; align-items:center; gap:6px;
   }
@@ -2625,6 +2625,26 @@
       pointAiMarkerLayer.appendChild(buildAiMarkerEl(r, pos));
     });
   }
+  // 版面尺寸一變（收合/拖曳地圖面板、視窗縮放）就重新調整全景與地圖大小，避免出現黑邊
+  let layoutRaf = 0;
+  function onLayoutChange(){
+    cancelAnimationFrame(layoutRaf);
+    layoutRaf = requestAnimationFrame(()=>{
+      if(pointStage.clientWidth > 0){
+        pointEngine.resize(); pointEngineB.resize();
+        if(pointEngine.state.img) pointEngine.render();
+        if(splitOn && pointEngineB.state.img) pointEngineB.render();
+      }
+      if(stage.clientWidth > 0){ tourEngine.resize(); if(tourEngine.state.img){ tourEngine.render(); placeHotspots(); } }
+      if(geoMap) geoMap.invalidateSize();
+    });
+  }
+  if(window.ResizeObserver){
+    const ro = new ResizeObserver(onLayoutChange);
+    ro.observe(pointStage); ro.observe(stage);
+    const geoEl = document.getElementById('geo-map'); if(geoEl) ro.observe(geoEl);
+  }
+
   const annLayerPoint = createAnnLayer(pointStage);
   function renderPointAnn(){
     const e = activeEpochObj();
