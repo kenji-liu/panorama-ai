@@ -2141,6 +2141,7 @@
   const TAIWAN_DEFAULT_CENTER = [23.97, 120.97]; // 台灣中部，貼合使用者所在地區
   const TAIWAN_DEFAULT_ZOOM = 9;
 
+  let geoFitPending = false;
   function initGeoMap(){
     if(geoMap) return;
     geoMap = L.map('geo-map', { zoomControl:true, attributionControl:true })
@@ -2200,6 +2201,14 @@
     if(!geoMap) return;
     Object.values(geoMarkers).forEach(m=>geoMap.removeLayer(m));
     geoMarkers = {};
+    // 載入資料後第一次在可見狀態下顯示地圖時，自動縮放到所有點位的範圍
+    const geoPts = points.filter(p=>p.kind==='geo');
+    const geoEl = document.getElementById('geo-map');
+    if(geoFitPending && geoPts.length && geoEl && geoEl.clientWidth>0){
+      geoFitPending = false;
+      geoMap.invalidateSize();
+      geoMap.fitBounds(geoPts.map(p=>[p.lat,p.lon]), { padding:[40,40], maxZoom:13 });
+    }
     points.filter(p=>p.kind==='geo').forEach(p=>{
       const isActive = p.id===activePointId;
       const icon = L.divIcon({
@@ -2581,12 +2590,19 @@
     if(aiBtn) aiBtn.style.display = (p.epochs.length>=2) ? '' : 'none';
   }
 
-  function selectEpoch(id){
+  async function selectEpoch(id){
     activeEpochId = id;
     const p = points.find(x=>x.id===activePointId);
     const e = p.epochs.find(x=>x.id===id);
     if(!e) return;
     pointNoEpoch.classList.add('hidden');
+    if(!e.img){
+      renderEpochTabs();
+      showToast('載入全景影像中…');
+      e.img = await loadImageAsync(e.src);
+      if(!e.img){ showToast('影像載入失敗，請稍後再試'); return; }
+      if(activeEpochId !== id) return; // 載入期間已切換到別的時期
+    }
     pointEngine.setImage(e.img);
     setPtFov(Math.PI/2);
     renderEpochTabs();
@@ -2726,6 +2742,11 @@
     const eA = p.epochs.find(x=>x.id===activeEpochId);
     if(eA) badgeL.textContent = epochLabel(eA);
     if(eB){
+      if(!eB.img){
+        showToast('載入對照時期影像中…');
+        loadImageAsync(eB.src).then(img=>{ if(img){ eB.img = img; syncSplitB(); } else showToast('影像載入失敗'); });
+        return;
+      }
       pointEngineB.setImage(eB.img);
       pointEngineB.state.yaw = pointEngine.state.yaw + (eB.yawOffset||0);
       pointEngineB.state.pitch = pointEngine.state.pitch;
@@ -2896,9 +2917,8 @@
     for(const p of (data.points||[])){
       const epochs = [];
       for(const e of (p.epochs||[])){
-        const img = await loadImageAsync(e.src);
-        if(!img) continue;
-        epochs.push({ id:e.id, year:e.year, month:e.month, note:e.note, img, src:e.src, yawOffset:e.yawOffset||0, isPrivate:!!e.isPrivate });
+        // 全景圖很大（每張數 MB），不在開機時全部下載，改成點選該時期才載入
+        epochs.push({ id:e.id, year:e.year, month:e.month, note:e.note, img:null, src:e.src, yawOffset:e.yawOffset||0, isPrivate:!!e.isPrivate });
       }
       const restored = { id:p.id, kind:p.kind, name:p.name, note:p.note, isPrivate:!!p.isPrivate, epochs };
       if(p.kind==='geo'){ restored.lat=p.lat; restored.lon=p.lon; }
@@ -2907,6 +2927,7 @@
     }
     renderMapPins();
     if(points.some(p=>p.kind==='geo')){
+      geoFitPending = true;
       initGeoMap();
       setTimeout(()=>renderGeoPins(), 60);
     }
@@ -3501,6 +3522,8 @@ ${SHARE_BODY}
     if(!eB){ showToast('找不到可比對的另一個時期'); return; }
 
     aiShowLoading('AI 跨時期比對', `${p.name}　${epochLabel(eA)} ↔ ${epochLabel(eB)}`, 'AI 偵測跨時期變化中…');
+    if(!eB.img) eB.img = await loadImageAsync(eB.src);
+    if(!eB.img){ aiShowError('影像載入失敗'); return; }
 
     // 確保 A 畫面已渲染（pointEngine 目前即 activeEpoch）；將 B 以相同視角渲染到副畫布
     pointEngineB.setImage(eB.img);
