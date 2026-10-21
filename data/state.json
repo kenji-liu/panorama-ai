@@ -155,7 +155,7 @@
      "month": 11,
      "note": "112/11/13 里嶺大橋上游",
      "src": "/data/assets/5cPqV.jpg",
-     "yawOffset": 1.1276,
+     "yawOffset": 1.1228,
      "isPrivate": false,
      "grp": "里嶺大橋上游"
     },
@@ -165,7 +165,7 @@
      "month": 4,
      "note": "113/04/08 第一次空拍地點3里嶺大橋上游裸露地(第一區)",
      "src": "/data/assets/5s4s5.jpg",
-     "yawOffset": 1.3926,
+     "yawOffset": 1.3934,
      "isPrivate": false,
      "grp": "里嶺大橋上游"
     },
@@ -175,7 +175,7 @@
      "month": 6,
      "note": "113/06/19 里嶺大橋上游",
      "src": "/data/assets/52msF.jpg",
-     "yawOffset": -0.7492,
+     "yawOffset": -0.7491,
      "isPrivate": false,
      "grp": "里嶺大橋上游"
     },
@@ -185,7 +185,17 @@
      "month": 9,
      "note": "113/09/03 里嶺大橋上游裸露地",
      "src": "/data/assets/5BdJ8.jpg",
-     "yawOffset": -0.3563,
+     "yawOffset": -0.3576,
+     "isPrivate": false,
+     "grp": "里嶺大橋上游"
+    },
+    {
+     "id": "ep-hMbdw",
+     "year": 114,
+     "month": 6,
+     "note": "114/06/19 高屏溪斜張大橋",
+     "src": "/data/assets/hMbdw.jpg",
+     "yawOffset": -0.0462,
      "isPrivate": false,
      "grp": "里嶺大橋上游"
     },
@@ -195,7 +205,7 @@
      "month": 9,
      "note": "114/09/08 里嶺大橋上游之裸露地區域",
      "src": "/data/assets/hjTrw.jpg",
-     "yawOffset": 0.0304,
+     "yawOffset": 0.0278,
      "isPrivate": false,
      "grp": "里嶺大橋上游"
     },
@@ -205,7 +215,7 @@
      "month": 10,
      "note": "114/10/27 里嶺大橋上游",
      "src": "/data/assets/hWNsl.jpg",
-     "yawOffset": 1.4301,
+     "yawOffset": 1.4306,
      "isPrivate": false,
      "grp": "里嶺大橋上游"
     },
@@ -215,7 +225,7 @@
      "month": 2,
      "note": "115/02/26 里嶺大橋上游",
      "src": "/data/assets/LLhkw.jpg",
-     "yawOffset": 0.2009,
+     "yawOffset": 0.2029,
      "isPrivate": false,
      "grp": "里嶺大橋上游"
     },
@@ -225,7 +235,7 @@
      "month": 6,
      "note": "115/06/22 里嶺大橋上游",
      "src": "/data/assets/Lcvsl.jpg",
-     "yawOffset": 0.1639,
+     "yawOffset": 0.1629,
      "isPrivate": false,
      "grp": "里嶺大橋上游"
     },
@@ -546,57 +556,6 @@
   {
    "id": "pt-04",
    "kind": "geo",
-   "name": "高屏溪斜張橋下游",
-   "note": "來源：Kuula（kenji700808）",
-   "isPrivate": false,
-   "lat": 22.75507,
-   "lon": 120.44969,
-   "epochs": [
-    {
-     "id": "ep-55scy",
-     "year": 112,
-     "month": 5,
-     "note": "112/05/02 斜張橋下游",
-     "src": "/data/assets/55scy.jpg",
-     "yawOffset": 1.4006,
-     "isPrivate": false,
-     "grp": "高屏溪斜張橋下游-下游A"
-    },
-    {
-     "id": "ep-5qh6V",
-     "year": 112,
-     "month": 9,
-     "note": "112/09/06 斜張橋下游",
-     "src": "/data/assets/5qh6V.jpg",
-     "yawOffset": 0.0,
-     "isPrivate": false,
-     "grp": "高屏溪斜張橋下游-下游A"
-    },
-    {
-     "id": "ep-hhnNG",
-     "year": 113,
-     "month": 11,
-     "note": "113/11/11 斜張橋下游",
-     "src": "/data/assets/hhnNG.jpg",
-     "yawOffset": 0.0,
-     "isPrivate": false,
-     "grp": "高屏溪斜張橋下游-下游B"
-    },
-    {
-     "id": "ep-hMbdw",
-     "year": 114,
-     "month": 6,
-     "note": "114/06/19 高屏溪斜張大橋",
-     "src": "/data/assets/hMbdw.jpg",
-     "yawOffset": 0.0,
-     "isPrivate": false,
-     "grp": "高屏溪斜張橋下游-里嶺大橋上游側"
-    }
-   ]
-  },
-  {
-   "id": "pt-05",
-   "kind": "geo",
    "name": "萬大橋下游",
    "note": "來源：Kuula（kenji700808）",
    "isPrivate": false,
@@ -642,6 +601,47 @@
      "yawOffset": 0.0,
      "isPrivate": false,
      "grp": "萬大橋下游"
+    }
+   ]
+  },
+  {
+   "id": "pt-05",
+   "kind": "geo",
+   "name": "高屏溪斜張橋下游",
+   "note": "來源：Kuula（kenji700808）",
+   "isPrivate": false,
+   "lat": 22.75445,
+   "lon": 120.4489,
+   "epochs": [
+    {
+     "id": "ep-55scy",
+     "year": 112,
+     "month": 5,
+     "note": "112/05/02 斜張橋下游",
+     "src": "/data/assets/55scy.jpg",
+     "yawOffset": 1.4006,
+     "isPrivate": false,
+     "grp": "高屏溪斜張橋下游-下游A"
+    },
+    {
+     "id": "ep-5qh6V",
+     "year": 112,
+     "month": 9,
+     "note": "112/09/06 斜張橋下游",
+     "src": "/data/assets/5qh6V.jpg",
+     "yawOffset": 0.0,
+     "isPrivate": false,
+     "grp": "高屏溪斜張橋下游-下游A"
+    },
+    {
+     "id": "ep-hhnNG",
+     "year": 113,
+     "month": 11,
+     "note": "113/11/11 斜張橋下游",
+     "src": "/data/assets/hhnNG.jpg",
+     "yawOffset": 0.0,
+     "isPrivate": false,
+     "grp": "高屏溪斜張橋下游-下游B"
     }
    ]
   },

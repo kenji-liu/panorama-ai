@@ -11,7 +11,7 @@ import json
 import os
 import shutil
 
-from import_kuula import TITLE_FIX, parse_title, point_name
+from import_kuula import POINT_OVERRIDE, TITLE_FIX, parse_title, point_name
 
 ROOT = os.path.dirname(os.path.abspath(__file__))
 DATA = os.path.join(ROOT, "data")
@@ -117,7 +117,8 @@ def main():
         if y is None:
             skipped.append((it["id"], it["title"], "標題無法解析日期"))
             continue
-        groups.setdefault(point_name(rest), []).append(dict(it, y=y, mo=mo, d=d, rest=rest, src=src))
+        groups.setdefault(POINT_OVERRIDE.get(it["id"]) or point_name(rest), []).append(
+            dict(it, y=y, mo=mo, d=d, rest=rest, src=src))
 
     points = []
     for n, (name, eps) in enumerate(groups.items(), 1):

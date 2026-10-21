@@ -1,34 +1,38 @@
 {
  "ep-5cPqV": {
-  "offset": 1.1276,
+  "offset": 1.1228,
   "grp": "里嶺大橋上游"
  },
  "ep-5s4s5": {
-  "offset": 1.3926,
+  "offset": 1.3934,
   "grp": "里嶺大橋上游"
  },
  "ep-52msF": {
-  "offset": -0.7492,
+  "offset": -0.7491,
   "grp": "里嶺大橋上游"
  },
  "ep-5BdJ8": {
-  "offset": -0.3563,
+  "offset": -0.3576,
+  "grp": "里嶺大橋上游"
+ },
+ "ep-hMbdw": {
+  "offset": -0.0462,
   "grp": "里嶺大橋上游"
  },
  "ep-hjTrw": {
-  "offset": 0.0304,
+  "offset": 0.0278,
   "grp": "里嶺大橋上游"
  },
  "ep-hWNsl": {
-  "offset": 1.4301,
+  "offset": 1.4306,
   "grp": "里嶺大橋上游"
  },
  "ep-LLhkw": {
-  "offset": 0.2009,
+  "offset": 0.2029,
   "grp": "里嶺大橋上游"
  },
  "ep-Lcvsl": {
-  "offset": 0.1639,
+  "offset": 0.1629,
   "grp": "里嶺大橋上游"
  },
  "ep-L8K4R": {
@@ -147,22 +151,6 @@
   "offset": 0.0,
   "grp": "萬丹堰／固床工下游"
  },
- "ep-55scy": {
-  "offset": 1.4006,
-  "grp": "高屏溪斜張橋下游-下游A"
- },
- "ep-5qh6V": {
-  "offset": 0.0,
-  "grp": "高屏溪斜張橋下游-下游A"
- },
- "ep-hhnNG": {
-  "offset": 0.0,
-  "grp": "高屏溪斜張橋下游-下游B"
- },
- "ep-hMbdw": {
-  "offset": 0.0,
-  "grp": "高屏溪斜張橋下游-里嶺大橋上游側"
- },
  "ep-5qBmc": {
   "offset": -1.5691,
   "grp": "萬大橋下游"
@@ -178,6 +166,18 @@
  "ep-hv4SS": {
   "offset": 0.0,
   "grp": "萬大橋下游"
+ },
+ "ep-55scy": {
+  "offset": 1.4006,
+  "grp": "高屏溪斜張橋下游-下游A"
+ },
+ "ep-5qh6V": {
+  "offset": 0.0,
+  "grp": "高屏溪斜張橋下游-下游A"
+ },
+ "ep-hhnNG": {
+  "offset": 0.0,
+  "grp": "高屏溪斜張橋下游-下游B"
  },
  "ep-5cPqR": {
   "offset": 0.0,

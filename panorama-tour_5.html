@@ -1720,6 +1720,17 @@
     }
     return out;
   }
+  // 各範圍標籤位置的平均方向（單位向量平均），用來讓視角一開始就朝向判釋範圍
+  function annCenter(ann){
+    if(!ann || !ann.items) return null;
+    let x=0, y=0, z=0, n=0;
+    ann.items.forEach(it=>{
+      if(it.t !== 'area' && it.t !== 'line') return;
+      x += Math.cos(it.at[1])*Math.sin(it.at[0]); y += Math.sin(it.at[1]); z += Math.cos(it.at[1])*Math.cos(it.at[0]); n++;
+    });
+    if(!n) return null;
+    return { yaw: Math.atan2(x, z), lat: Math.asin(Math.max(-1, Math.min(1, y/Math.hypot(x,y,z)))) };
+  }
   function annClipNear(poly){
     const out = [];
     for(let i=0;i<poly.length;i++){
@@ -2767,6 +2778,10 @@
     if(prevView && prevE.id !== e.id && !otherSpot(prevE, e)){
       pointEngine.state.yaw = prevView.yaw + relYaw(prevE, e);
       pointEngine.state.pitch = prevView.pitch;
+    } else if(!prevView){
+      // 剛進入此點位：若有報告判釋範圍，視角直接朝向範圍
+      const c = annCenter(annotationsData[annKey(e.src)]);
+      if(c){ pointEngine.state.yaw = c.yaw; pointEngine.state.pitch = Math.max(-0.3, Math.min(0.6, -c.lat*0.6)); }
     }
     setPtFov(prevView ? prevView.fov : Math.PI/2);
     renderEpochTabs();
@@ -2880,6 +2895,7 @@
     btnCalibrate.style.display = splitOn ? '' : 'none';
     if(!splitOn) exitCalibrateMode();
     if(splitOn){ refreshSplitSelect(); syncSplitB(); applySplitClip(); }
+    else applySplitClip(); // 關閉時要解除左側全景的裁切，否則右半邊會一直是黑的
   });
 
   function refreshSplitSelect(){
