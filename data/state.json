@@ -1,0 +1,517 @@
+{
+ "version": 1,
+ "scenes": [],
+ "basemap": null,
+ "points": [
+  {
+   "id": "pt-01",
+   "kind": "geo",
+   "name": "里嶺大橋上游",
+   "note": "來源：Kuula（kenji700808）",
+   "isPrivate": false,
+   "lat": 22.77467,
+   "lon": 120.451,
+   "epochs": [
+    {
+     "id": "ep-5cPqV",
+     "year": 112,
+     "month": 11,
+     "note": "112/11/13 里嶺大橋上游",
+     "src": "/data/assets/5cPqV.jpg",
+     "yawOffset": 0,
+     "isPrivate": false
+    },
+    {
+     "id": "ep-5s4s5",
+     "year": 113,
+     "month": 4,
+     "note": "113/04/08 第一次空拍地點3里嶺大橋上游裸露地(第一區)",
+     "src": "/data/assets/5s4s5.jpg",
+     "yawOffset": 0,
+     "isPrivate": false
+    },
+    {
+     "id": "ep-52msF",
+     "year": 113,
+     "month": 6,
+     "note": "113/06/19 里嶺大橋上游",
+     "src": "/data/assets/52msF.jpg",
+     "yawOffset": 0,
+     "isPrivate": false
+    },
+    {
+     "id": "ep-5BdJ8",
+     "year": 113,
+     "month": 9,
+     "note": "113/09/03 里嶺大橋上游裸露地",
+     "src": "/data/assets/5BdJ8.jpg",
+     "yawOffset": 0,
+     "isPrivate": false
+    },
+    {
+     "id": "ep-hjTrw",
+     "year": 114,
+     "month": 9,
+     "note": "114/09/08 里嶺大橋上游之裸露地區域",
+     "src": "/data/assets/hjTrw.jpg",
+     "yawOffset": 0,
+     "isPrivate": false
+    },
+    {
+     "id": "ep-hWNsl",
+     "year": 114,
+     "month": 10,
+     "note": "114/10/27 里嶺大橋上游",
+     "src": "/data/assets/hWNsl.jpg",
+     "yawOffset": 0,
+     "isPrivate": false
+    },
+    {
+     "id": "ep-LLhkw",
+     "year": 115,
+     "month": 2,
+     "note": "115/02/26 里嶺大橋上游",
+     "src": "/data/assets/LLhkw.jpg",
+     "yawOffset": 0,
+     "isPrivate": false
+    },
+    {
+     "id": "ep-Lcvsl",
+     "year": 115,
+     "month": 6,
+     "note": "115/06/22 里嶺大橋上游",
+     "src": "/data/assets/Lcvsl.jpg",
+     "yawOffset": 0,
+     "isPrivate": false
+    },
+    {
+     "id": "ep-L8K4R",
+     "year": 115,
+     "month": 10,
+     "note": "115/10/08 里嶺大橋上游",
+     "src": "/data/assets/L8K4R.jpg",
+     "yawOffset": 0,
+     "isPrivate": false
+    }
+   ]
+  },
+  {
+   "id": "pt-02",
+   "kind": "geo",
+   "name": "高屏大橋下游",
+   "note": "來源：Kuula（kenji700808）",
+   "isPrivate": false,
+   "lat": 22.63485,
+   "lon": 120.43402,
+   "epochs": [
+    {
+     "id": "ep-55sc6",
+     "year": 112,
+     "month": 5,
+     "note": "112/05/02 高屏大橋下游",
+     "src": "/data/assets/55sc6.jpg",
+     "yawOffset": 0,
+     "isPrivate": false
+    },
+    {
+     "id": "ep-5BMPt",
+     "year": 113,
+     "month": 9,
+     "note": "113/09/03 高屏大橋下游裸露地",
+     "src": "/data/assets/5BMPt.jpg",
+     "yawOffset": 0,
+     "isPrivate": false
+    },
+    {
+     "id": "ep-hhnNh",
+     "year": 113,
+     "month": 11,
+     "note": "113/11/11 高屏大橋下游",
+     "src": "/data/assets/hhnNh.jpg",
+     "yawOffset": 0,
+     "isPrivate": false
+    },
+    {
+     "id": "ep-hv4B0",
+     "year": 114,
+     "month": 3,
+     "note": "114/03/08 高屏大橋下游",
+     "src": "/data/assets/hv4B0.jpg",
+     "yawOffset": 0,
+     "isPrivate": false
+    },
+    {
+     "id": "ep-hMbds",
+     "year": 114,
+     "month": 6,
+     "note": "114/06/19 高屏溪高屏大橋下游",
+     "src": "/data/assets/hMbds.jpg",
+     "yawOffset": 0,
+     "isPrivate": false
+    },
+    {
+     "id": "ep-hjTrs",
+     "year": 114,
+     "month": 9,
+     "note": "114/09/08 高屏大橋下游",
+     "src": "/data/assets/hjTrs.jpg",
+     "yawOffset": 0,
+     "isPrivate": false
+    },
+    {
+     "id": "ep-hWNsp",
+     "year": 114,
+     "month": 10,
+     "note": "114/10/27 高屏大橋下游",
+     "src": "/data/assets/hWNsp.jpg",
+     "yawOffset": 0,
+     "isPrivate": false
+    },
+    {
+     "id": "ep-LmTL3",
+     "year": 115,
+     "month": 2,
+     "note": "115/02/26 高屏大橋2",
+     "src": "/data/assets/LmTL3.jpg",
+     "yawOffset": 0,
+     "isPrivate": false
+    },
+    {
+     "id": "ep-LLhkH",
+     "year": 115,
+     "month": 2,
+     "note": "115/02/26 高屏大橋下游",
+     "src": "/data/assets/LLhkH.jpg",
+     "yawOffset": 0,
+     "isPrivate": false
+    },
+    {
+     "id": "ep-LcvsG",
+     "year": 115,
+     "month": 6,
+     "note": "115/06/22 高屏大橋下游",
+     "src": "/data/assets/LcvsG.jpg",
+     "yawOffset": 0,
+     "isPrivate": false
+    },
+    {
+     "id": "ep-L8crR",
+     "year": 115,
+     "month": 10,
+     "note": "115/10/08 高屏大橋下游",
+     "src": "/data/assets/L8crR.jpg",
+     "yawOffset": 0,
+     "isPrivate": false
+    }
+   ]
+  },
+  {
+   "id": "pt-03",
+   "kind": "geo",
+   "name": "萬丹堰／固床工下游",
+   "note": "來源：Kuula（kenji700808）",
+   "isPrivate": false,
+   "lat": 22.5531,
+   "lon": 120.43688,
+   "epochs": [
+    {
+     "id": "ep-5qhnR",
+     "year": 112,
+     "month": 9,
+     "note": "112/09/06 高屏溪潮寮里下游",
+     "src": "/data/assets/5qhnR.jpg",
+     "yawOffset": 0,
+     "isPrivate": false
+    },
+    {
+     "id": "ep-5cPqY",
+     "year": 112,
+     "month": 11,
+     "note": "112/11/13 萬丹堰下游2",
+     "src": "/data/assets/5cPqY.jpg",
+     "yawOffset": 0,
+     "isPrivate": false
+    },
+    {
+     "id": "ep-5cPk2",
+     "year": 112,
+     "month": 11,
+     "note": "112/11/13 萬丹堰下游",
+     "src": "/data/assets/5cPk2.jpg",
+     "yawOffset": 0,
+     "isPrivate": false
+    },
+    {
+     "id": "ep-5s49g",
+     "year": 113,
+     "month": 4,
+     "note": "113/04/08 第一次空拍地點1高屏溪潮寮里下游裸露地",
+     "src": "/data/assets/5s49g.jpg",
+     "yawOffset": 0,
+     "isPrivate": false
+    },
+    {
+     "id": "ep-52mW2",
+     "year": 113,
+     "month": 6,
+     "note": "113/06/19 高屏溪潮寮里下游",
+     "src": "/data/assets/52mW2.jpg",
+     "yawOffset": 0,
+     "isPrivate": false
+    },
+    {
+     "id": "ep-5BHrs",
+     "year": 113,
+     "month": 9,
+     "note": "113/09/03 第一點萬丹堰下游河段",
+     "src": "/data/assets/5BHrs.jpg",
+     "yawOffset": 0,
+     "isPrivate": false
+    },
+    {
+     "id": "ep-hhdrY",
+     "year": 113,
+     "month": 11,
+     "note": "113/11/11 高屏溪潮寮里下游",
+     "src": "/data/assets/hhdrY.jpg",
+     "yawOffset": 0,
+     "isPrivate": false
+    },
+    {
+     "id": "ep-hvpB0",
+     "year": 114,
+     "month": 3,
+     "note": "114/03/08 萬丹堰下游2",
+     "src": "/data/assets/hvpB0.jpg",
+     "yawOffset": 0,
+     "isPrivate": false
+    },
+    {
+     "id": "ep-hv4zH",
+     "year": 114,
+     "month": 3,
+     "note": "114/03/08 高屏溪萬丹堰下游",
+     "src": "/data/assets/hv4zH.jpg",
+     "yawOffset": 0,
+     "isPrivate": false
+    },
+    {
+     "id": "ep-hMbdx",
+     "year": 114,
+     "month": 6,
+     "note": "114/06/19 高屏溪萬丹堰下游",
+     "src": "/data/assets/hMbdx.jpg",
+     "yawOffset": 0,
+     "isPrivate": false
+    },
+    {
+     "id": "ep-hjdNR",
+     "year": 114,
+     "month": 9,
+     "note": "114/09/08 高屏溪潮寮里下游(萬丹固床工)2",
+     "src": "/data/assets/hjdNR.jpg",
+     "yawOffset": 0,
+     "isPrivate": false
+    },
+    {
+     "id": "ep-hjTtt",
+     "year": 114,
+     "month": 9,
+     "note": "114/09/08 高屏溪潮寮里下游",
+     "src": "/data/assets/hjTtt.jpg",
+     "yawOffset": 0,
+     "isPrivate": false
+    },
+    {
+     "id": "ep-hWNjB",
+     "year": 114,
+     "month": 10,
+     "note": "114/10/27 高屏溪潮寮里下游(萬丹固床工)",
+     "src": "/data/assets/hWNjB.jpg",
+     "yawOffset": 0,
+     "isPrivate": false
+    },
+    {
+     "id": "ep-LmY8d",
+     "year": 115,
+     "month": 2,
+     "note": "115/02/26 萬丹堰2",
+     "src": "/data/assets/LmY8d.jpg",
+     "yawOffset": 0,
+     "isPrivate": false
+    },
+    {
+     "id": "ep-LLhPw",
+     "year": 115,
+     "month": 2,
+     "note": "115/02/26 高屏溪潮寮里下游(萬丹固床工)",
+     "src": "/data/assets/LLhPw.jpg",
+     "yawOffset": 0,
+     "isPrivate": false
+    },
+    {
+     "id": "ep-Lcvs5",
+     "year": 115,
+     "month": 6,
+     "note": "115/06/22 萬丹堰",
+     "src": "/data/assets/Lcvs5.jpg",
+     "yawOffset": 0,
+     "isPrivate": false
+    },
+    {
+     "id": "ep-L8cSt",
+     "year": 115,
+     "month": 10,
+     "note": "115/10/08 萬丹固床工下游",
+     "src": "/data/assets/L8cSt.jpg",
+     "yawOffset": 0,
+     "isPrivate": false
+    }
+   ]
+  },
+  {
+   "id": "pt-04",
+   "kind": "geo",
+   "name": "高屏溪斜張橋下游",
+   "note": "來源：Kuula（kenji700808）",
+   "isPrivate": false,
+   "lat": 22.75507,
+   "lon": 120.44969,
+   "epochs": [
+    {
+     "id": "ep-55scy",
+     "year": 112,
+     "month": 5,
+     "note": "112/05/02 斜張橋下游",
+     "src": "/data/assets/55scy.jpg",
+     "yawOffset": 0,
+     "isPrivate": false
+    },
+    {
+     "id": "ep-5qh6V",
+     "year": 112,
+     "month": 9,
+     "note": "112/09/06 斜張橋下游",
+     "src": "/data/assets/5qh6V.jpg",
+     "yawOffset": 0,
+     "isPrivate": false
+    },
+    {
+     "id": "ep-hhnNG",
+     "year": 113,
+     "month": 11,
+     "note": "113/11/11 斜張橋下游",
+     "src": "/data/assets/hhnNG.jpg",
+     "yawOffset": 0,
+     "isPrivate": false
+    },
+    {
+     "id": "ep-hMbdw",
+     "year": 114,
+     "month": 6,
+     "note": "114/06/19 高屏溪斜張大橋",
+     "src": "/data/assets/hMbdw.jpg",
+     "yawOffset": 0,
+     "isPrivate": false
+    }
+   ]
+  },
+  {
+   "id": "pt-05",
+   "kind": "geo",
+   "name": "萬大橋下游",
+   "note": "來源：Kuula（kenji700808）",
+   "isPrivate": false,
+   "lat": 22.57946,
+   "lon": 120.43888,
+   "epochs": [
+    {
+     "id": "ep-5qBmc",
+     "year": 112,
+     "month": 9,
+     "note": "112/09/06 萬大大橋下游2",
+     "src": "/data/assets/5qBmc.jpg",
+     "yawOffset": 0,
+     "isPrivate": false
+    },
+    {
+     "id": "ep-5qhdp",
+     "year": 112,
+     "month": 9,
+     "note": "112/09/06 高屏溪萬大橋下游",
+     "src": "/data/assets/5qhdp.jpg",
+     "yawOffset": 0,
+     "isPrivate": false
+    },
+    {
+     "id": "ep-5s48d",
+     "year": 113,
+     "month": 4,
+     "note": "113/04/08 第一次空拍地點2萬大橋下游",
+     "src": "/data/assets/5s48d.jpg",
+     "yawOffset": 0,
+     "isPrivate": false
+    },
+    {
+     "id": "ep-hv4SS",
+     "year": 114,
+     "month": 3,
+     "note": "114/03/08 萬大橋下游",
+     "src": "/data/assets/hv4SS.jpg",
+     "yawOffset": 0,
+     "isPrivate": false
+    }
+   ]
+  },
+  {
+   "id": "pt-06",
+   "kind": "geo",
+   "name": "里港大橋下游",
+   "note": "來源：Kuula（kenji700808）",
+   "isPrivate": false,
+   "lat": 22.7911,
+   "lon": 120.47824,
+   "epochs": [
+    {
+     "id": "ep-5cPqR",
+     "year": 112,
+     "month": 11,
+     "note": "112/11/13 里港大橋下游",
+     "src": "/data/assets/5cPqR.jpg",
+     "yawOffset": 0,
+     "isPrivate": false
+    },
+    {
+     "id": "ep-52mWd",
+     "year": 113,
+     "month": 6,
+     "note": "113/06/19 里港大橋下游",
+     "src": "/data/assets/52mWd.jpg",
+     "yawOffset": 0,
+     "isPrivate": false
+    }
+   ]
+  },
+  {
+   "id": "pt-07",
+   "kind": "geo",
+   "name": "其他",
+   "note": "來源：Kuula（kenji700808）",
+   "isPrivate": false,
+   "lat": 23.81667,
+   "lon": 120.9,
+   "epochs": [
+    {
+     "id": "ep-5wlWS",
+     "year": 113,
+     "month": 6,
+     "note": "113/06/12 1130612",
+     "src": "/data/assets/5wlWS.jpg",
+     "yawOffset": 0,
+     "isPrivate": false
+    }
+   ]
+  }
+ ],
+ "analysisRecords": []
+}

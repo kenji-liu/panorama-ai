@@ -169,9 +169,22 @@ def get_private_keys():
     return _private_cache["keys"]
 
 
+STATIC_STATE_PATH = os.path.join(BASE_DIR, "data", "state.json")
+
+
+def static_data_ready():
+    return os.path.exists(STATIC_STATE_PATH)
+
+
 @app.route("/api/state", methods=["GET"])
 def api_get_state():
     if not storage_ready():
+        # 沒有 R2 時，改讀隨程式一起部署的 data/state.json（由 build_static_data.py 產生）
+        if static_data_ready():
+            with open(STATIC_STATE_PATH, encoding="utf-8") as f:
+                resp = jsonify(filter_public_state(json.load(f)))
+            resp.headers["Cache-Control"] = "no-store"
+            return resp
         return jsonify(EMPTY_STATE)
     try:
         obj = get_s3().get_object(Bucket=R2_BUCKET, Key=STATE_KEY)
@@ -464,6 +477,24 @@ def _run_anthropic(system, items):
     return _extract_json(text)
 
 
+def ai_enabled():
+    # 只有明確設定 AI_PROVIDER 且有金鑰才啟用；沒設定就視為不使用 AI（前端會自動隱藏 AI 按鈕）
+    return bool(os.environ.get("AI_PROVIDER")) and bool(_api_key())
+
+
+@app.before_request
+def block_ai_when_disabled():
+    if request.path in ("/api/analyze", "/api/compare", "/api/calibrate") and not ai_enabled():
+        return jsonify({"error": "此網站未啟用 AI 分析功能"}), 503
+
+
+@app.after_request
+def cache_static_assets(resp):
+    if request.path.startswith("/data/assets/") and resp.status_code == 200:
+        resp.headers["Cache-Control"] = "public, max-age=86400"
+    return resp
+
+
 def run_llm(system, items):
     if CFG["kind"] == "anthropic":
         return _run_anthropic(system, items)
@@ -539,6 +570,8 @@ def health():
         "kind": CFG["kind"],
         "model": CFG["model"],
         "key_set": bool(_api_key()),
+        "ai_enabled": ai_enabled(),
+        "static_data": static_data_ready(),
         "storage_ready": storage_ready(),
         "admin_enabled": bool(ADMIN_PASSWORD),
     })

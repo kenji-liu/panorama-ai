@@ -643,6 +643,8 @@
   #ai-provider-badge.p-custom{ color:var(--text-mid); }
 
   /* ===== 管理者登入 / 唯讀瀏覽 ===== */
+  body.no-ai #btn-ai-analyze, body.no-ai #btn-compare-ai, body.no-ai #btn-ai-history, body.no-ai #ai-provider-badge{ display:none !important; }
+  body.static-readonly #btn-admin-login, body.static-readonly #save-server-status{ display:none !important; }
   #btn-admin-login{
     position:fixed; bottom:14px; left:14px; z-index:201;
     display:flex; align-items:center; gap:6px; cursor:pointer;
@@ -3639,14 +3641,22 @@ ${SHARE_BODY}
         serverState.hasBackend = true;
         serverState.storageReady = !!d.storage_ready;
         serverState.adminEnabled = !!d.admin_enabled;
+        serverState.staticData = !!d.static_data;
+        // 沒有啟用 AI 時，隱藏所有 AI 入口
+        document.body.classList.toggle('no-ai', d.ai_enabled === false);
         updateProviderBadge(d);
       }
-    }catch(e){ /* 本機靜態預覽：無後端，靜默 */ }
+    }catch(e){ document.body.classList.add('no-ai'); /* 本機靜態預覽：無後端，靜默 */ }
 
     // 自動還原管理者登入
     if(serverState.adminEnabled){
       let saved=''; try{ saved = localStorage.getItem('panoAdminPwd')||''; }catch(e){}
       if(saved){ try{ if(await tryAdminLogin(saved)){ isAdmin=true; adminPassword=saved; } }catch(e){} }
+    } else if(serverState.staticData && !/[?&]edit=1/.test(location.search)){
+      // 內容由倉庫內的 data/state.json 提供（無雲端資料庫）：公開網站為純瀏覽。
+      // 本機要編輯可在網址後加 ?edit=1。
+      isAdmin = false;
+      document.body.classList.add('static-readonly');
     } else {
       // 本機單人使用且後端未設定管理密碼時，直接開放編輯入口。
       // 若日後部署為多人共用，只要設定 ADMIN_PASSWORD 即恢復登入保護。
