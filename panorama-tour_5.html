@@ -2928,6 +2928,11 @@
     renderMapPins();
     if(points.some(p=>p.kind==='geo')){
       geoFitPending = true;
+      // 只有地理點位、沒有自訂底圖時，預設直接顯示「地理地圖」分頁
+      if(!basemap && !points.some(p=>p.kind!=='geo')){
+        const geoBtn = document.querySelector('.map-src-btn[data-src="geo"]');
+        if(geoBtn && mapSourceMode !== 'geo') geoBtn.click();
+      }
       initGeoMap();
       setTimeout(()=>renderGeoPins(), 60);
     }
