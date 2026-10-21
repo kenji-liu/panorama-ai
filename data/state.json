@@ -628,26 +628,6 @@
      "isPrivate": false
     }
    ]
-  },
-  {
-   "id": "pt-07",
-   "kind": "geo",
-   "name": "其他",
-   "note": "來源：Kuula（kenji700808）",
-   "isPrivate": false,
-   "lat": 23.81667,
-   "lon": 120.9,
-   "epochs": [
-    {
-     "id": "ep-5wlWS",
-     "year": 113,
-     "month": 6,
-     "note": "113/06/12 1130612",
-     "src": "/data/assets/5wlWS.jpg",
-     "yawOffset": 0,
-     "isPrivate": false
-    }
-   ]
   }
  ],
  "analysisRecords": []

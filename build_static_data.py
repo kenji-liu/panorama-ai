@@ -97,7 +97,8 @@ def main():
     ap.add_argument("--dir", default=os.path.join(os.path.expanduser("~"), "Downloads"))
     ap.add_argument("--exclude", default="", help="以逗號分隔的 Kuula ID，這些相片不公開")
     args = ap.parse_args()
-    excluded = {x.strip() for x in args.exclude.split(",") if x.strip()}
+    # 永遠不公開的相片：5wlWS = 標題只有 1130612、座標在南投的那張（使用者要求刪除）
+    excluded = {"5wlWS"} | {x.strip() for x in args.exclude.split(",") if x.strip()}
 
     items = json.load(open(os.path.join(args.dir, "kuula_manifest.json"), encoding="utf-8-sig"))
     os.makedirs(ASSETS, exist_ok=True)
