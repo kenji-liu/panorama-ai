@@ -1,0 +1,190 @@
+{
+ "ep-5cPqV": {
+  "offset": 1.1276,
+  "grp": "里嶺大橋上游"
+ },
+ "ep-5s4s5": {
+  "offset": 1.3926,
+  "grp": "里嶺大橋上游"
+ },
+ "ep-52msF": {
+  "offset": -0.7492,
+  "grp": "里嶺大橋上游"
+ },
+ "ep-5BdJ8": {
+  "offset": -0.3563,
+  "grp": "里嶺大橋上游"
+ },
+ "ep-hjTrw": {
+  "offset": 0.0304,
+  "grp": "里嶺大橋上游"
+ },
+ "ep-hWNsl": {
+  "offset": 1.4301,
+  "grp": "里嶺大橋上游"
+ },
+ "ep-LLhkw": {
+  "offset": 0.2009,
+  "grp": "里嶺大橋上游"
+ },
+ "ep-Lcvsl": {
+  "offset": 0.1639,
+  "grp": "里嶺大橋上游"
+ },
+ "ep-L8K4R": {
+  "offset": 0.0,
+  "grp": "里嶺大橋上游"
+ },
+ "ep-55sc6": {
+  "offset": 1.4475,
+  "grp": "高屏大橋下游"
+ },
+ "ep-5BMPt": {
+  "offset": 0.6467,
+  "grp": "高屏大橋下游"
+ },
+ "ep-hhnNh": {
+  "offset": 1.4504,
+  "grp": "高屏大橋下游"
+ },
+ "ep-hv4B0": {
+  "offset": 0.641,
+  "grp": "高屏大橋下游"
+ },
+ "ep-hMbds": {
+  "offset": 1.7201,
+  "grp": "高屏大橋下游"
+ },
+ "ep-hjTrs": {
+  "offset": -0.0246,
+  "grp": "高屏大橋下游"
+ },
+ "ep-hWNsp": {
+  "offset": -1.2709,
+  "grp": "高屏大橋下游"
+ },
+ "ep-LmTL3": {
+  "offset": -1.0241,
+  "grp": "高屏大橋下游"
+ },
+ "ep-LLhkH": {
+  "offset": -1.1502,
+  "grp": "高屏大橋下游"
+ },
+ "ep-LcvsG": {
+  "offset": -1.8635,
+  "grp": "高屏大橋下游"
+ },
+ "ep-L8crR": {
+  "offset": 0.0,
+  "grp": "高屏大橋下游"
+ },
+ "ep-5qhnR": {
+  "offset": -0.1517,
+  "grp": "萬丹堰／固床工下游"
+ },
+ "ep-5cPk2": {
+  "offset": 0.0657,
+  "grp": "萬丹堰／固床工下游"
+ },
+ "ep-5cPqY": {
+  "offset": 0.2921,
+  "grp": "萬丹堰／固床工下游"
+ },
+ "ep-5s49g": {
+  "offset": 3.0871,
+  "grp": "萬丹堰／固床工下游"
+ },
+ "ep-52mW2": {
+  "offset": -2.6845,
+  "grp": "萬丹堰／固床工下游"
+ },
+ "ep-5BHrs": {
+  "offset": 0.2233,
+  "grp": "萬丹堰／固床工下游"
+ },
+ "ep-hhdrY": {
+  "offset": -0.165,
+  "grp": "萬丹堰／固床工下游"
+ },
+ "ep-hvpB0": {
+  "offset": -1.0185,
+  "grp": "萬丹堰／固床工下游"
+ },
+ "ep-hv4zH": {
+  "offset": -1.464,
+  "grp": "萬丹堰／固床工下游"
+ },
+ "ep-hMbdx": {
+  "offset": -0.0611,
+  "grp": "萬丹堰／固床工下游"
+ },
+ "ep-hjTtt": {
+  "offset": -0.3767,
+  "grp": "萬丹堰／固床工下游"
+ },
+ "ep-hjdNR": {
+  "offset": -0.9294,
+  "grp": "萬丹堰／固床工下游"
+ },
+ "ep-hWNjB": {
+  "offset": -1.3535,
+  "grp": "萬丹堰／固床工下游"
+ },
+ "ep-LmY8d": {
+  "offset": -0.9124,
+  "grp": "萬丹堰／固床工下游"
+ },
+ "ep-LLhPw": {
+  "offset": -0.9124,
+  "grp": "萬丹堰／固床工下游"
+ },
+ "ep-Lcvs5": {
+  "offset": -1.2216,
+  "grp": "萬丹堰／固床工下游"
+ },
+ "ep-L8cSt": {
+  "offset": 0.0,
+  "grp": "萬丹堰／固床工下游"
+ },
+ "ep-55scy": {
+  "offset": 1.4006,
+  "grp": "高屏溪斜張橋下游-下游A"
+ },
+ "ep-5qh6V": {
+  "offset": 0.0,
+  "grp": "高屏溪斜張橋下游-下游A"
+ },
+ "ep-hhnNG": {
+  "offset": 0.0,
+  "grp": "高屏溪斜張橋下游-下游B"
+ },
+ "ep-hMbdw": {
+  "offset": 0.0,
+  "grp": "高屏溪斜張橋下游-里嶺大橋上游側"
+ },
+ "ep-5qBmc": {
+  "offset": -1.5691,
+  "grp": "萬大橋下游"
+ },
+ "ep-5qhdp": {
+  "offset": -1.1539,
+  "grp": "萬大橋下游"
+ },
+ "ep-5s48d": {
+  "offset": 0.9969,
+  "grp": "萬大橋下游"
+ },
+ "ep-hv4SS": {
+  "offset": 0.0,
+  "grp": "萬大橋下游"
+ },
+ "ep-5cPqR": {
+  "offset": 0.0,
+  "grp": "里港大橋下游-甲"
+ },
+ "ep-52mWd": {
+  "offset": 0.0,
+  "grp": "里港大橋下游-乙"
+ }
+}

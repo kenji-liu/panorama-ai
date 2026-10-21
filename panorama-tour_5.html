@@ -219,6 +219,21 @@
   }
   .hotspot:hover .hotspot-label{ opacity:1; }
 
+  /* ===== 報告判釋範圍疊圖 ===== */
+  .ann-layer{ position:absolute; inset:0; z-index:14; pointer-events:none; overflow:hidden; }
+  .ann-svg{ position:absolute; inset:0; width:100%; height:100%; }
+  .ann-tag{
+    position:absolute; transform:translate(-50%,-115%); font-size:11.5px; line-height:1.35; padding:2px 8px; border-radius:5px;
+    background:rgba(12,14,17,.86); color:#fff; border:1px solid var(--c,#fff); white-space:nowrap; max-width:70vw;
+    overflow:hidden; text-overflow:ellipsis; text-shadow:0 1px 2px #000;
+  }
+  .ann-tag::before{ content:''; display:inline-block; width:7px; height:7px; border-radius:50%; background:var(--c,#fff); margin-right:6px; vertical-align:1px; }
+  .ann-badge{
+    position:absolute; left:14px; bottom:62px; pointer-events:auto; cursor:pointer; font-size:11.5px; padding:5px 11px;
+    border-radius:7px; background:rgba(12,14,17,.82); border:1px solid #ffffff40; color:#fff; backdrop-filter:blur(4px);
+  }
+  .ann-badge:hover{ border-color:var(--accent); }
+  .ann-badge b{ font-family:var(--mono); font-weight:500; color:#ffd7c4; }
   .priv-row{ display:flex; align-items:center; gap:8px; margin:12px 0 4px; font-size:12.5px; color:var(--text-mid); cursor:pointer; }
   .priv-row input{ width:16px; height:16px; accent-color:var(--accent); }
   .priv-badge{ font-size:11px; margin-left:4px; }
@@ -1445,6 +1460,19 @@
       ctx.putImageData(out,0,0);
     }
 
+    // 回傳相機座標 [dx,dy,dz]（dz>0 代表在鏡頭前方），供疊圖在近平面做裁切
+    function projectRaw(hYaw,hPitch){
+      const cosY=Math.cos(state.yaw), sinY=Math.sin(state.yaw);
+      const cosP=Math.cos(state.pitch), sinP=Math.sin(state.pitch);
+      const wx=Math.cos(hPitch)*Math.sin(hYaw), wy=Math.sin(hPitch), wz=Math.cos(hPitch)*Math.cos(hYaw);
+      const fx=wx*cosY-wz*sinY, fz=wx*sinY+wz*cosY, fy=wy;
+      return [fx, fy*cosP+fz*sinP, -fy*sinP+fz*cosP];
+    }
+    function viewParams(){
+      const wrap = canvas.parentElement;
+      return { w:wrap.clientWidth, h:wrap.clientHeight, tanHalf:Math.tan(state.fov/2) };
+    }
+
     function projectToScreen(hYaw,hPitch){
       const wrap = canvas.parentElement;
       const cosY=Math.cos(state.yaw), sinY=Math.sin(state.yaw);
@@ -1545,7 +1573,7 @@
       },{passive:false});
     }
 
-    return { canvas, state, resize, setImage, render, setFov, clampPitch, projectToScreen, screenToYawPitch, bindDrag, FOV_MIN, FOV_MAX };
+    return { canvas, state, resize, setImage, render, setFov, clampPitch, projectToScreen, projectRaw, viewParams, screenToYawPitch, bindDrag, FOV_MIN, FOV_MAX };
   }
 
   /* =========================================================
@@ -1657,6 +1685,121 @@
   const hotspotBanner = document.getElementById('hotspot-banner');
   const hotspotLayer = (()=>{ const d=document.createElement('div'); d.style.position='absolute'; d.style.inset='0'; d.style.zIndex='15'; d.style.pointerEvents='none'; stage.appendChild(d); return d; })();
   const aiMarkerLayer = (()=>{ const d=document.createElement('div'); d.style.position='absolute'; d.style.inset='0'; d.style.zIndex='16'; d.style.pointerEvents='none'; stage.appendChild(d); return d; })();
+
+  /* ---- 報告判釋範圍（約略位置）：範圍/標籤以 yaw·pitch 存放，依目前視角即時投影 ---- */
+  let annotationsData = {};
+  let annVisible = true; try{ annVisible = localStorage.getItem('panoAnn') !== '0'; }catch(e){}
+  const ANN_COLOR = { wet:'#ff7b6b', dredge:'#ffd23f', seed:'#7bd46a', veg:'#5fd0a0', mark:'#8fd0ff' };
+  const ANN_NEAR = 0.03;
+  function annKey(src){ const m = /\/([A-Za-z0-9]+)\.jpg/.exec(src||''); return m ? m[1] : null; }
+  function createAnnLayer(container){
+    const root = document.createElement('div'); root.className = 'ann-layer'; root.style.display = 'none';
+    root.innerHTML = '<svg class="ann-svg" xmlns="http://www.w3.org/2000/svg"></svg><div class="ann-tags"></div><div class="ann-badge" role="button" tabindex="0"></div>';
+    container.appendChild(root);
+    root.querySelector('.ann-badge').addEventListener('click', ()=>{
+      annVisible = !annVisible;
+      try{ localStorage.setItem('panoAnn', annVisible?'1':'0'); }catch(e){}
+      renderTourAnn(); renderPointAnn();
+    });
+    return root;
+  }
+  const annLayerTour = createAnnLayer(stage);
+
+  // 兩個單位向量間依球面內插，讓多邊形邊線在畫面上沿大圓走（與平面照片上的直線一致）
+  function annDensify(a, b){
+    const va = [Math.cos(a[1])*Math.sin(a[0]), Math.sin(a[1]), Math.cos(a[1])*Math.cos(a[0])];
+    const vb = [Math.cos(b[1])*Math.sin(b[0]), Math.sin(b[1]), Math.cos(b[1])*Math.cos(b[0])];
+    const dot = Math.max(-1, Math.min(1, va[0]*vb[0]+va[1]*vb[1]+va[2]*vb[2]));
+    const ang = Math.acos(dot), n = Math.max(1, Math.ceil(ang/0.02));
+    const out = [];
+    for(let i=0;i<n;i++){
+      const t = i/n, s = Math.sin(ang) || 1;
+      const k1 = ang<1e-6 ? 1-t : Math.sin((1-t)*ang)/s, k2 = ang<1e-6 ? t : Math.sin(t*ang)/s;
+      const x = k1*va[0]+k2*vb[0], y = k1*va[1]+k2*vb[1], z = k1*va[2]+k2*vb[2];
+      out.push([Math.atan2(x,z), Math.asin(Math.max(-1,Math.min(1,y/Math.hypot(x,y,z))))]);
+    }
+    return out;
+  }
+  function annClipNear(poly){
+    const out = [];
+    for(let i=0;i<poly.length;i++){
+      const a = poly[i], b = poly[(i+1)%poly.length], ain = a[2] >= ANN_NEAR, bin = b[2] >= ANN_NEAR;
+      if(ain) out.push(a);
+      if(ain !== bin){
+        const t = (ANN_NEAR-a[2])/(b[2]-a[2]);
+        out.push([a[0]+t*(b[0]-a[0]), a[1]+t*(b[1]-a[1]), ANN_NEAR]);
+      }
+    }
+    return out;
+  }
+
+  function renderAnn(layer, engine, ann){
+    const svg = layer.querySelector('.ann-svg'), tags = layer.querySelector('.ann-tags'), badge = layer.querySelector('.ann-badge');
+    svg.innerHTML = ''; tags.innerHTML = '';
+    if(!ann){ layer.style.display = 'none'; return; }
+    layer.style.display = '';
+    badge.innerHTML = (annVisible ? '◉' : '○') + ' 報告判釋範圍・<b>約略位置</b>・' + escapeHtml(ann.date||'');
+    badge.title = '點擊顯示／隱藏。範圍由報告的平面照片對位到全景，位置僅供參考。';
+    if(!annVisible) return;
+    const vp = engine.viewParams();
+    if(!vp.w || !vp.h) return;
+    svg.setAttribute('viewBox', `0 0 ${vp.w} ${vp.h}`);
+    const aspect = vp.w/vp.h;
+    const px = v => [ (((v[0]/v[2])/(vp.tanHalf*aspect))*0.5+0.5)*vp.w, (1-(((v[1]/v[2])/vp.tanHalf)*0.5+0.5))*vp.h ];
+    const NS = 'http://www.w3.org/2000/svg';
+    const addTag = (at, text, color)=>{
+      const v = engine.projectRaw(at[0], at[1]);
+      if(v[2] < 0.05) return;
+      const [x,y] = px(v);
+      if(x < 10 || x > vp.w-10 || y < 26 || y > vp.h-8) return;
+      const d = document.createElement('div'); d.className = 'ann-tag'; d.style.setProperty('--c', color);
+      d.style.left = x+'px'; d.style.top = y+'px'; d.textContent = text; tags.appendChild(d);
+    };
+    (ann.items||[]).forEach(it=>{
+      const color = ANN_COLOR[it.k] || '#fff';
+      if(it.t === 'area'){
+        let pts = [];
+        for(let i=0;i<it.poly.length;i++) pts = pts.concat(annDensify(it.poly[i], it.poly[(i+1)%it.poly.length]));
+        const cam = annClipNear(pts.map(p=>engine.projectRaw(p[0],p[1])));
+        if(cam.length >= 3){
+          const el = document.createElementNS(NS,'polygon');
+          el.setAttribute('points', cam.map(v=>px(v).map(n=>n.toFixed(1)).join(',')).join(' '));
+          el.setAttribute('fill', color); el.setAttribute('fill-opacity', '0.16');
+          el.setAttribute('stroke', color); el.setAttribute('stroke-width', '2'); el.setAttribute('stroke-dasharray', '7 5');
+          svg.appendChild(el);
+        }
+        addTag(it.at, it.label, color);
+      } else if(it.t === 'line'){
+        let pts = [];
+        for(let i=0;i+1<it.pts.length;i++) pts = pts.concat(annDensify(it.pts[i], it.pts[i+1]));
+        pts.push(it.pts[it.pts.length-1]);
+        const cam = pts.map(p=>engine.projectRaw(p[0],p[1])).filter(v=>v[2]>=ANN_NEAR);
+        if(cam.length >= 2){
+          const el = document.createElementNS(NS,'polyline');
+          el.setAttribute('points', cam.map(v=>px(v).map(n=>n.toFixed(1)).join(',')).join(' '));
+          el.setAttribute('fill', 'none'); el.setAttribute('stroke', color); el.setAttribute('stroke-width', '3.5');
+          svg.appendChild(el);
+        }
+        addTag(it.at, it.label, color);
+      } else {
+        const v = engine.projectRaw(it.at[0], it.at[1]);
+        if(v[2] >= 0.05){
+          const [x,y] = px(v);
+          if(x > -20 && x < vp.w+20 && y > -20 && y < vp.h+20){
+            const c = document.createElementNS(NS,'circle');
+            c.setAttribute('cx', x.toFixed(1)); c.setAttribute('cy', y.toFixed(1)); c.setAttribute('r', '5');
+            c.setAttribute('fill', color); c.setAttribute('stroke', '#0c0e10'); c.setAttribute('stroke-width', '1.5');
+            svg.appendChild(c);
+          }
+        }
+        addTag(it.at, it.label, color);
+      }
+    });
+  }
+  function renderTourAnn(){
+    const scene = scenes.find(s=>s.id===activeSceneId);
+    renderAnn(annLayerTour, tourEngine, scene ? annotationsData[annKey(scene.src)] : null);
+  }
   let hotspotMode=false, pendingHotspotPos=null;
 
   tourEngine.bindDrag({
@@ -1698,6 +1841,7 @@
       hotspotLayer.appendChild(el);
     });
     placeAiMarkers();
+    renderTourAnn();
   }
 
   // 將 AI 判讀紀錄畫成畫面上的標記點（依當時拍攝的 yaw/pitch 定位），點擊可回顧該筆判讀
@@ -2462,8 +2606,13 @@
       pointAiMarkerLayer.appendChild(buildAiMarkerEl(r, pos));
     });
   }
+  const annLayerPoint = createAnnLayer(pointStage);
+  function renderPointAnn(){
+    const e = activeEpochObj();
+    renderAnn(annLayerPoint, pointEngine, e ? annotationsData[annKey(e.src)] : null);
+  }
   const _pointEngineRender = pointEngine.render;
-  pointEngine.render = function(){ _pointEngineRender.call(pointEngine); placePointAiMarkers(); };
+  pointEngine.render = function(){ _pointEngineRender.call(pointEngine); placePointAiMarkers(); renderPointAnn(); };
 
   const ptFovReadout = document.getElementById('pt-fov-readout');
   function setPtFov(v){
@@ -2599,6 +2748,9 @@
   }
 
   async function selectEpoch(id){
+    // 換時期時保持「現實中看的方向」不變（依各期方位偏移換算），方便逐期對照同一處
+    const prevE = activeEpochObj();
+    const prevView = (prevE && pointEngine.state.img) ? { yaw:pointEngine.state.yaw, pitch:pointEngine.state.pitch, fov:pointEngine.state.fov } : null;
     activeEpochId = id;
     const p = points.find(x=>x.id===activePointId);
     const e = p.epochs.find(x=>x.id===id);
@@ -2612,7 +2764,11 @@
       if(activeEpochId !== id) return; // 載入期間已切換到別的時期
     }
     pointEngine.setImage(e.img);
-    setPtFov(Math.PI/2);
+    if(prevView && prevE.id !== e.id && !otherSpot(prevE, e)){
+      pointEngine.state.yaw = prevView.yaw + relYaw(prevE, e);
+      pointEngine.state.pitch = prevView.pitch;
+    }
+    setPtFov(prevView ? prevView.fov : Math.PI/2);
     renderEpochTabs();
     if(splitOn) syncSplitB();
   }
@@ -2743,6 +2899,14 @@
     return p.epochs.find(x=>x.id===splitSelectB.value);
   }
 
+  // 各時期的 yawOffset 是「相對同點位基準期」的方位偏移；左右兩期對照時，B 的視角 = A 的視角 + (B 偏移 − A 偏移)
+  function relYaw(eA, eB){ return (eB.yawOffset||0) - (eA ? (eA.yawOffset||0) : 0); }
+  function otherSpot(eA, eB){ return !!(eA && eB && eA.grp && eB.grp && eA.grp !== eB.grp); }
+  function activeEpochObj(){
+    const p = points.find(x=>x.id===activePointId);
+    return p ? p.epochs.find(x=>x.id===activeEpochId) : null;
+  }
+
   function syncSplitB(){
     const p = points.find(x=>x.id===activePointId);
     if(!p || !splitOn) return;
@@ -2756,13 +2920,13 @@
         return;
       }
       pointEngineB.setImage(eB.img);
-      pointEngineB.state.yaw = pointEngine.state.yaw + (eB.yawOffset||0);
+      pointEngineB.state.yaw = pointEngine.state.yaw + relYaw(eA, eB);
       pointEngineB.state.pitch = pointEngine.state.pitch;
       pointEngineB.state.fov = pointEngine.state.fov;
       pointEngineB.resize();
       pointEngineB.render();
-      badgeR.textContent = epochLabel(eB);
-      calibBadge.textContent = `偏移量 ${Math.round((eB.yawOffset||0)*180/Math.PI)}°`;
+      badgeR.textContent = epochLabel(eB) + (otherSpot(eA, eB) ? '・拍攝位置不同' : '');
+      calibBadge.textContent = `偏移量 ${Math.round(relYaw(eA, eB)*180/Math.PI)}°`;
     }
   }
 
@@ -2802,9 +2966,9 @@
     const eB = getEpochB();
     if(!eB) return;
     eB.yawOffset = (eB.yawOffset||0) - dx*0.0028*pointEngineB.state.fov;
-    pointEngineB.state.yaw = pointEngine.state.yaw + eB.yawOffset;
+    pointEngineB.state.yaw = pointEngine.state.yaw + relYaw(activeEpochObj(), eB);
     pointEngineB.render();
-    calibBadge.textContent = `偏移量 ${Math.round(eB.yawOffset*180/Math.PI)}°`;
+    calibBadge.textContent = `偏移量 ${Math.round(relYaw(activeEpochObj(), eB)*180/Math.PI)}°`;
   });
   window.addEventListener('mouseup', ()=>{ if(calibDragging && calibrating){ const eB=getEpochB(); if(eB) markEpochDirty(activePointId, eB.id); scheduleSave(); } calibDragging=false; });
   canvasB.addEventListener('touchstart', e=>{
@@ -2820,9 +2984,9 @@
     const eB = getEpochB();
     if(!eB) return;
     eB.yawOffset = (eB.yawOffset||0) - dx*0.0028*pointEngineB.state.fov;
-    pointEngineB.state.yaw = pointEngine.state.yaw + eB.yawOffset;
+    pointEngineB.state.yaw = pointEngine.state.yaw + relYaw(activeEpochObj(), eB);
     pointEngineB.render();
-    calibBadge.textContent = `偏移量 ${Math.round(eB.yawOffset*180/Math.PI)}°`;
+    calibBadge.textContent = `偏移量 ${Math.round(relYaw(activeEpochObj(), eB)*180/Math.PI)}°`;
   }, {passive:true});
   window.addEventListener('touchend', ()=>{ if(calibDragging && calibrating){ const eB=getEpochB(); if(eB) markEpochDirty(activePointId, eB.id); scheduleSave(); } calibDragging=false; });
 
@@ -2852,6 +3016,7 @@
     splitLine.style.left = pct+'%';
     canvasB.style.clipPath = `inset(0 0 0 ${pct}%)`;
     pointEngine.canvas.style.clipPath = splitOn ? `inset(0 ${100-pct}% 0 0)` : '';
+    annLayerPoint.style.clipPath = splitOn ? `inset(0 ${100-pct}% 0 0)` : '';
   }
 
   /* =========================================================
@@ -2869,6 +3034,7 @@
       version: 1,
       savedAt: new Date().toISOString(),
       analysisRecords,
+      annotations: annotationsData,
       scenes: scenes.map(s=>({
         id:s.id, name:s.name, note:s.note, src:s.src, thumb:s.thumb||undefined, startYaw:Number.isFinite(s.startYaw)?s.startYaw:undefined, isPrivate:!!s.isPrivate,
         hotspots: s.hotspots.map(h=>({ id:h.id, yaw:h.yaw, pitch:h.pitch, targetId:h.targetId, label:h.label }))
@@ -2876,7 +3042,7 @@
       basemap: basemap ? { src:basemap.src, name:basemap.name } : null,
       points: points.map(p=>{
         const base = { id:p.id, kind:p.kind, name:p.name, note:p.note, isPrivate:!!p.isPrivate,
-          epochs: p.epochs.map(e=>({ id:e.id, year:e.year, month:e.month, note:e.note, src:e.src, yawOffset:e.yawOffset||0, isPrivate:!!e.isPrivate })) };
+          epochs: p.epochs.map(e=>({ id:e.id, year:e.year, month:e.month, note:e.note, src:e.src, yawOffset:e.yawOffset||0, grp:e.grp||undefined, isPrivate:!!e.isPrivate })) };
         if(p.kind==='geo'){ base.lat=p.lat; base.lon=p.lon; }
         else { base.x=p.x; base.y=p.y; }
         return base;
@@ -2898,6 +3064,7 @@
   async function restoreState(data){
     if(!data) return;
     analysisRecords = Array.isArray(data.analysisRecords) ? data.analysisRecords : [];
+    annotationsData = (data.annotations && typeof data.annotations === 'object') ? data.annotations : {};
     // 場景
     scenes = [];
     for(const s of (data.scenes||[])){
@@ -2925,7 +3092,7 @@
       const epochs = [];
       for(const e of (p.epochs||[])){
         // 全景圖很大（每張數 MB），不在開機時全部下載，改成點選該時期才載入
-        epochs.push({ id:e.id, year:e.year, month:e.month, note:e.note, img:null, src:e.src, yawOffset:e.yawOffset||0, isPrivate:!!e.isPrivate });
+        epochs.push({ id:e.id, year:e.year, month:e.month, note:e.note, img:null, src:e.src, yawOffset:e.yawOffset||0, grp:e.grp, isPrivate:!!e.isPrivate });
       }
       const restored = { id:p.id, kind:p.kind, name:p.name, note:p.note, isPrivate:!!p.isPrivate, epochs };
       if(p.kind==='geo'){ restored.lat=p.lat; restored.lon=p.lon; }
@@ -3539,7 +3706,7 @@ ${SHARE_BODY}
 
     // 確保 A 畫面已渲染（pointEngine 目前即 activeEpoch）；將 B 以相同視角渲染到副畫布
     pointEngineB.setImage(eB.img);
-    pointEngineB.state.yaw = pointEngine.state.yaw + (eB.yawOffset||0);
+    pointEngineB.state.yaw = pointEngine.state.yaw + relYaw(eA, eB);
     pointEngineB.state.pitch = pointEngine.state.pitch;
     pointEngineB.state.fov = pointEngine.state.fov;
     pointEngineB.resize();

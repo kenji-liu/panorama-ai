@@ -147,7 +147,23 @@ def main():
             epoch_note[e["id"][3:]] = "%d/%02d/%02d" % tuple(int(x) for x in e["note"].split()[0].split("/"))
     scenes = build_scenes(epoch_note)
 
-    state = {"version": 1, "scenes": scenes, "basemap": None, "points": points, "analysisRecords": []}
+    # 各期全景的方位偏移與「同一拍攝位置」分組（由影像比對算出，見 data/align.json）
+    align_path = os.path.join(DATA, "align.json")
+    if os.path.exists(align_path):
+        align = json.load(open(align_path, encoding="utf-8"))
+        for p in points:
+            for e in p["epochs"]:
+                a = align.get(e["id"])
+                if a:
+                    e["yawOffset"] = a["offset"]
+                    e["grp"] = a["grp"]
+
+    # 報告判釋範圍（約略位置，由報告平面圖對位到全景；見 data/annotations.json）
+    ann_path = os.path.join(DATA, "annotations.json")
+    annotations = json.load(open(ann_path, encoding="utf-8")) if os.path.exists(ann_path) else {}
+
+    state = {"version": 1, "scenes": scenes, "basemap": None, "points": points, "analysisRecords": [],
+             "annotations": annotations}
     with open(os.path.join(DATA, "state.json"), "w", encoding="utf-8") as f:
         json.dump(state, f, ensure_ascii=False, indent=1)
 
