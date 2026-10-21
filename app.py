@@ -22,7 +22,10 @@
 import os
 import io
 import json
+import time
+import hmac
 import uuid
+import hashlib
 import base64
 import binascii
 
@@ -36,6 +39,7 @@ INDEX_FILE = "panorama-tour_5.html"
 
 MAX_TOKENS = int(os.environ.get("LLM_MAX_TOKENS", "1500"))
 MAX_IMAGE_BYTES = 4 * 1024 * 1024  # AI 分析的截圖上限，約 4MB
+BUILD_ID = "2026-07-14-groq-plain-json-v2"
 
 # =========================================================
 # 雲端資料庫（Cloudflare R2，S3 相容）+ 管理者驗證
@@ -76,8 +80,20 @@ def get_s3():
     return _s3
 
 
+ADMIN_COOKIE = "pano_admin"
+
+
+def admin_token():
+    return hashlib.sha256(("pano-admin:" + ADMIN_PASSWORD).encode("utf-8")).hexdigest()
+
+
 def is_admin(req):
-    return bool(ADMIN_PASSWORD) and req.headers.get("X-Admin-Password", "") == ADMIN_PASSWORD
+    if not ADMIN_PASSWORD:
+        return False
+    if hmac.compare_digest(req.headers.get("X-Admin-Password", ""), ADMIN_PASSWORD):
+        return True
+    # <img> 與 CSS 背景圖無法帶自訂標頭，改以登入時下發的 cookie 讓管理者看得到私人圖片
+    return hmac.compare_digest(req.cookies.get(ADMIN_COOKIE, ""), admin_token())
 
 
 EMPTY_STATE = {"version": 1, "scenes": [], "basemap": None, "points": []}
@@ -86,8 +102,71 @@ EMPTY_STATE = {"version": 1, "scenes": [], "basemap": None, "points": []}
 @app.route("/api/admin-check", methods=["POST"])
 def api_admin_check():
     data = request.get_json(silent=True) or {}
-    ok = bool(ADMIN_PASSWORD) and data.get("password", "") == ADMIN_PASSWORD
-    return jsonify({"ok": ok, "admin_enabled": bool(ADMIN_PASSWORD)})
+    ok = bool(ADMIN_PASSWORD) and hmac.compare_digest(str(data.get("password", "")), ADMIN_PASSWORD)
+    resp = jsonify({"ok": ok, "admin_enabled": bool(ADMIN_PASSWORD)})
+    if ok:
+        resp.set_cookie(ADMIN_COOKIE, admin_token(), max_age=60 * 60 * 24 * 90,
+                        httponly=True, samesite="Lax", secure=request.is_secure)
+    return resp
+
+
+@app.route("/api/admin-logout", methods=["POST"])
+def api_admin_logout():
+    resp = jsonify({"ok": True})
+    resp.delete_cookie(ADMIN_COOKIE)
+    return resp
+
+
+def filter_public_state(state):
+    """移除標為 isPrivate 的場景／點位／時期，以及只指向它們的熱點與 AI 紀錄（訪客用）。"""
+    scenes = [s for s in state.get("scenes", []) if not s.get("isPrivate")]
+    scene_ids = {s.get("id") for s in scenes}
+    for s in scenes:
+        s["hotspots"] = [h for h in s.get("hotspots", []) if h.get("targetId") in scene_ids]
+    points = []
+    for p in state.get("points", []):
+        if p.get("isPrivate"):
+            continue
+        p["epochs"] = [e for e in p.get("epochs", []) if not e.get("isPrivate")]
+        points.append(p)
+    loc_ids = scene_ids | {p.get("id") for p in points}
+    out = dict(state)
+    out["scenes"] = scenes
+    out["points"] = points
+    out["analysisRecords"] = [r for r in state.get("analysisRecords", []) if r.get("locationId") in loc_ids]
+    return out
+
+
+def private_asset_keys(state):
+    keys = set()
+
+    def key_of(src):
+        prefix = "/api/asset/"
+        return src[len(prefix):] if isinstance(src, str) and src.startswith(prefix) else None
+
+    for s in state.get("scenes", []):
+        if s.get("isPrivate") and key_of(s.get("src")):
+            keys.add(key_of(s["src"]))
+    for p in state.get("points", []):
+        for e in p.get("epochs", []):
+            if (p.get("isPrivate") or e.get("isPrivate")) and key_of(e.get("src")):
+                keys.add(key_of(e["src"]))
+    return keys
+
+
+_private_cache = {"at": 0.0, "keys": set()}
+
+
+def get_private_keys():
+    now = time.time()
+    if now - _private_cache["at"] > 10:
+        try:
+            obj = get_s3().get_object(Bucket=R2_BUCKET, Key=STATE_KEY)
+            _private_cache["keys"] = private_asset_keys(json.loads(obj["Body"].read()))
+        except Exception:  # noqa: BLE001
+            _private_cache["keys"] = set()
+        _private_cache["at"] = now
+    return _private_cache["keys"]
 
 
 @app.route("/api/state", methods=["GET"])
@@ -96,10 +175,12 @@ def api_get_state():
         return jsonify(EMPTY_STATE)
     try:
         obj = get_s3().get_object(Bucket=R2_BUCKET, Key=STATE_KEY)
-        body = obj["Body"].read()
-        return Response(body, mimetype="application/json")
+        state = json.loads(obj["Body"].read())
     except Exception:  # noqa: BLE001  尚無資料時回傳空狀態
         return jsonify(EMPTY_STATE)
+    resp = jsonify(state if is_admin(request) else filter_public_state(state))
+    resp.headers["Cache-Control"] = "no-store"
+    return resp
 
 
 @app.route("/api/state", methods=["POST"])
@@ -151,6 +232,9 @@ def api_asset(key):
         abort(404)
     if ".." in key or key.startswith("/"):
         abort(400)
+    private = key in get_private_keys()
+    if private and not is_admin(request):
+        abort(404)
     try:
         obj = get_s3().get_object(Bucket=R2_BUCKET, Key=key)
         data = obj["Body"].read()
@@ -158,7 +242,9 @@ def api_asset(key):
     except Exception:  # noqa: BLE001
         abort(404)
     resp = Response(data, mimetype=ctype)
-    resp.headers["Cache-Control"] = "public, max-age=31536000, immutable"
+    resp.headers["Cache-Control"] = (
+        "private, no-store" if private else "public, max-age=31536000, immutable"
+    )
     return resp
 
 # ---- 供應商設定表 ----
@@ -166,13 +252,13 @@ PROVIDERS = {
     "gemini": {
         "kind": "openai",
         "base": "https://generativelanguage.googleapis.com/v1beta/openai/",
-        "model": os.environ.get("GEMINI_MODEL", "gemini-2.0-flash"),
+        "model": os.environ.get("GEMINI_MODEL", "gemini-2.5-flash"),
         "keys": ["GEMINI_API_KEY", "GOOGLE_API_KEY", "LLM_API_KEY"],
     },
     "groq": {
         "kind": "openai",
         "base": "https://api.groq.com/openai/v1",
-        "model": os.environ.get("GROQ_MODEL", "meta-llama/llama-4-scout-17b-16e-instruct"),
+        "model": os.environ.get("GROQ_MODEL", "qwen/qwen3.6-27b"),
         "keys": ["GROQ_API_KEY", "LLM_API_KEY"],
     },
     "claude": {
@@ -233,7 +319,9 @@ ANALYZE_SHAPE = (
     '{'
     '"summary": "一句話總結畫面狀況", '
     '"overall_condition": "良好｜輕微異常｜中度損壞｜嚴重損壞｜無法判定 其中之一", '
+    '"confidence": 0.0 到 1.0 的數值, '
     '"observations": [{"item": "觀察到的項目或異常", "severity": "資訊｜注意｜警告｜嚴重 其中之一", "location": "畫面中相對位置"}], '
+    '"recommended_action": "巡查、量測、封鎖、修復或持續觀測等具體建議", '
     '"report": "可貼入現勘報告的中文敘述段落"'
     '}'
 )
@@ -241,7 +329,9 @@ COMPARE_SHAPE = (
     '{'
     '"summary": "一句話總結兩期主要差異", '
     '"change_level": "無明顯變化｜輕微變化｜中度變化｜顯著變化｜無法判定 其中之一", '
+    '"confidence": 0.0 到 1.0 的數值, '
     '"changes": [{"description": "變化內容", "change_type": "沖刷｜淤積｜結構位移｜植被變化｜新增設施｜損壞｜其他 其中之一", "severity": "資訊｜注意｜警告｜嚴重 其中之一", "location": "相對位置"}], '
+    '"recommended_action": "針對變化提出的具體複核或處置建議", '
     '"report": "可貼入現勘報告的跨時期比對敘述段落"'
     '}'
 )
@@ -257,7 +347,7 @@ CALIBRATE_SHAPE = (
 SYS_ANALYZE = (
     "你是台灣水利／水土保持工程的現勘判釋專家，協助判讀治理設施（魚道、固床工、防砂壩、護岸、平台等）"
     "的環景影像。請以繁體中文，客觀、具體地辨識畫面中的損壞或異常（裂縫、掏空、護坡破損、堆積物、"
-    "結構傾斜、沖刷等），標明相對位置與嚴重度。若畫面資訊不足，誠實說明無法判定，不要臆測。\n"
+    "結構傾斜、沖刷等），標明相對位置與嚴重度。信心值應反映遮蔽、解析度、光線及單一視角限制；若畫面資訊不足，誠實說明無法判定，不要臆測。\n"
     "務必只輸出符合以下結構的 JSON，不要加任何說明文字或程式碼框：\n" + ANALYZE_SHAPE
 )
 SYS_COMPARE = (
@@ -328,12 +418,27 @@ def _run_openai(system, items):
         else:
             content.append({"type": "image_url", "image_url": {"url": it["data_url"]}})
     messages = [{"role": "system", "content": system}, {"role": "user", "content": content}]
+    # Groq 的 Qwen Vision 雖標示支援 JSON Mode，但複雜雙影像提示可能在
+    # 服務端被 failed_generation / Failed to validate JSON 拒絕。Groq 改採
+    # 一般模式並由 _extract_json 擷取，避免請求在模型完成前直接回傳 400。
+    if PROVIDER == "groq":
+        resp = client.chat.completions.create(
+            model=CFG["model"], max_tokens=MAX_TOKENS, temperature=0.2, messages=messages,
+        )
+        return _extract_json(resp.choices[0].message.content)
+
     try:
         resp = client.chat.completions.create(
             model=CFG["model"], max_tokens=MAX_TOKENS, temperature=0.2,
             messages=messages, response_format={"type": "json_object"},
         )
-    except Exception:  # noqa: BLE001  某些端點不支援 json_object，退回一般模式
+    except Exception as e:  # 僅在端點不支援 JSON 模式時退回，避免 429 等錯誤被重送
+        message = str(e).lower()
+        if not any(token in message for token in (
+            "response_format", "json_object", "json mode", "structured output", "not supported",
+            "failed to validate json", "failed_generation"
+        )):
+            raise
         resp = client.chat.completions.create(
             model=CFG["model"], max_tokens=MAX_TOKENS, temperature=0.2, messages=messages,
         )
@@ -429,6 +534,7 @@ def api_calibrate():
 def health():
     return jsonify({
         "ok": True,
+        "build": BUILD_ID,
         "provider": PROVIDER,
         "kind": CFG["kind"],
         "model": CFG["model"],

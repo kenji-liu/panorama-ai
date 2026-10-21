@@ -219,6 +219,33 @@
   }
   .hotspot:hover .hotspot-label{ opacity:1; }
 
+  .priv-row{ display:flex; align-items:center; gap:8px; margin:12px 0 4px; font-size:12.5px; color:var(--text-mid); cursor:pointer; }
+  .priv-row input{ width:16px; height:16px; accent-color:var(--accent); }
+  .priv-badge{ font-size:11px; margin-left:4px; }
+  .epoch-lock-btn{ margin-left:6px; cursor:pointer; opacity:.55; font-size:11px; }
+  .epoch-lock-btn:hover,.epoch-lock-btn.on{ opacity:1; }
+  body:not(.is-admin) .epoch-lock-btn{ display:none !important; }
+
+  .ai-marker{ position:absolute; width:30px; height:30px; margin:-28px 0 0 -15px; cursor:pointer; z-index:16; display:flex; align-items:flex-end; justify-content:center; }
+  .ai-marker-pin{
+    width:24px; height:24px; border-radius:50% 50% 50% 0; transform:rotate(-45deg);
+    display:flex; align-items:center; justify-content:center; border:2px solid #1a1208;
+    box-shadow:0 2px 8px rgba(0,0,0,.45);
+  }
+  .ai-marker-pin span{ transform:rotate(45deg); font-size:12px; font-weight:700; color:#1a1208; line-height:1; }
+  .ai-marker.sev-0 .ai-marker-pin,.ai-marker.sev-1 .ai-marker-pin{ background:#e0b04a; }
+  .ai-marker.sev-2 .ai-marker-pin{ background:#e8873b; }
+  .ai-marker.sev-3 .ai-marker-pin{ background:#d96a5a; }
+  .ai-marker-label{
+    position:absolute; bottom:32px; left:50%; transform:translateX(-50%);
+    font-family:var(--mono); font-size:10px; white-space:nowrap; color:var(--text-hi); max-width:220px;
+    overflow:hidden; text-overflow:ellipsis;
+    background:rgba(20,22,25,0.92); border:1px solid var(--line); padding:3px 8px; border-radius:5px;
+    opacity:0; pointer-events:none; transition:opacity .15s; backdrop-filter:blur(4px);
+  }
+  .ai-marker:hover .ai-marker-label{ opacity:1; }
+  .ai-marker:hover .ai-marker-pin{ filter:brightness(1.15); }
+
   #hotspot-banner{
     position:absolute; top:80px; left:50%; transform:translateX(-50%); z-index:25;
     background:rgba(232,116,59,0.12); border:1px solid var(--accent-dim); color:var(--accent);
@@ -236,9 +263,25 @@
   #compare-view.show{ display:flex; }
 
   #map-panel{
-    width:46%; min-width:340px; height:100%; background:var(--bg-deep); border-right:1px solid var(--line);
-    position:relative; display:flex; flex-direction:column;
+    width:34%; min-width:260px; flex:none; height:100%; background:var(--bg-deep);
+    position:relative; display:flex; flex-direction:column; overflow:hidden;
+    transition:width .22s ease,min-width .22s ease;
   }
+  #map-panel.resizing{ transition:none; }
+  #map-panel.collapsed{ width:44px !important; min-width:44px; }
+  #map-panel.collapsed > *{ visibility:hidden; pointer-events:none; }
+  #map-panel-resizer{
+    width:9px; flex:0 0 9px; height:100%; position:relative; cursor:ew-resize; z-index:40;
+    background:var(--line-soft); border-left:1px solid var(--line); border-right:1px solid var(--line);
+  }
+  #map-panel-resizer:hover,#map-panel-resizer.dragging{ background:var(--accent-dim); }
+  #map-panel-toggle{
+    position:absolute; top:50%; left:50%; transform:translate(-50%,-50%); width:28px; height:48px;
+    border-radius:7px; border:1px solid var(--accent-dim); background:var(--bg-panel); color:var(--accent);
+    cursor:pointer; display:flex; align-items:center; justify-content:center; font-size:17px;
+    box-shadow:0 3px 12px rgba(0,0,0,.4); z-index:2;
+  }
+  #map-panel-toggle:hover{ background:#2b2018; }
   #map-header{
     padding:64px 20px 14px; border-bottom:1px solid var(--line-soft); background:var(--bg-panel);
     display:flex; justify-content:space-between; align-items:flex-end; gap:10px;
@@ -527,7 +570,10 @@
 
   @media (max-width:860px){
     #compare-view.show{ flex-direction:column; }
-    #map-panel{ width:100%; height:42%; min-width:0; border-right:none; border-bottom:1px solid var(--line); }
+  #map-panel{ width:100%; height:42%; min-width:0; border-right:none; border-bottom:1px solid var(--line); }
+  #map-panel.collapsed{ width:100% !important; min-width:0; height:42%; }
+  #map-panel.collapsed > *{ visibility:visible; pointer-events:auto; }
+  #map-panel-resizer{ display:none; }
     #point-panel{ height:58%; }
     #mode-switch{ top:12px; }
     #map-header, #point-header{ padding-top:14px; }
@@ -677,6 +723,20 @@
   }
   .ai-copy-btn{ margin-top:8px; }
   .ai-error{ color:#d96a5a; font-size:12.5px; line-height:1.6; }
+  .ai-actions{ display:flex; gap:8px; flex-wrap:wrap; margin-top:10px; }
+  .ai-meta-grid{ display:grid; grid-template-columns:repeat(3,1fr); gap:8px; margin:0 0 14px; }
+  .ai-meta-card{ background:var(--bg-deep); border:1px solid var(--line-soft); border-radius:8px; padding:10px; }
+  .ai-meta-card b{ display:block; color:var(--text-hi); font-size:15px; margin-top:3px; }
+  .ai-meta-card span{ color:var(--text-low); font-family:var(--mono); font-size:9.5px; }
+  .analysis-modal .modal{ width:min(760px,calc(100vw - 28px)); }
+  .analysis-toolbar{ display:flex; gap:8px; align-items:center; margin-bottom:12px; flex-wrap:wrap; }
+  .analysis-table-wrap{ max-height:48vh; overflow:auto; border:1px solid var(--line-soft); border-radius:8px; }
+  .analysis-table{ width:100%; border-collapse:collapse; font-size:11.5px; }
+  .analysis-table th,.analysis-table td{ padding:9px 10px; border-bottom:1px solid var(--line-soft); text-align:left; vertical-align:top; }
+  .analysis-table th{ position:sticky; top:0; background:var(--bg-panel-raised); color:var(--text-mid); font-family:var(--mono); font-size:9.5px; z-index:1; }
+  .analysis-table tr:last-child td{ border-bottom:0; }
+  .analysis-empty{ color:var(--text-low); text-align:center; padding:28px; font-size:12.5px; }
+  @media(max-width:620px){ .ai-meta-grid{ grid-template-columns:1fr; } .analysis-table th:nth-child(2),.analysis-table td:nth-child(2){display:none;} }
 </style>
 </head>
 <body>
@@ -775,6 +835,9 @@
           <div class="icon-btn" id="btn-ai-analyze" title="AI 分析當前視角（損壞／異常辨識）">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2a4 4 0 0 1 4 4 4 4 0 0 1 .9 7.9A4 4 0 0 1 12 22a4 4 0 0 1-4.9-8.1A4 4 0 0 1 8 6a4 4 0 0 1 4-4z"/><path d="M12 6v12M8 10h8M8 14h8"/></svg>
           </div>
+          <div class="icon-btn" id="btn-ai-history" title="AI 分析資料台">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M4 19V9M10 19V5M16 19v-7M22 19H2"/></svg>
+          </div>
           <div class="icon-btn" id="btn-auto-rotate" title="自動旋轉（R）">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="5 3 19 12 5 21 5 3"/></svg>
           </div>
@@ -871,6 +934,10 @@
           </div>
           <div class="coord-readout" id="geo-coord-readout">--, --</div>
         </div>
+      </div>
+
+      <div id="map-panel-resizer" title="拖曳調整地圖寬度">
+        <button id="map-panel-toggle" title="收合／展開地圖" aria-label="收合或展開地圖">‹</button>
       </div>
 
       <!-- 右：點位多時期全景 -->
@@ -983,6 +1050,7 @@
     <input class="field-input" id="input-edit-scene-name" placeholder="例：固床工上游 ST.0+120">
     <label class="field-label">場域備註（選填）</label>
     <input class="field-input" id="input-edit-scene-note" placeholder="例：114年度竣工後現勘">
+    <label class="priv-row"><input type="checkbox" id="input-edit-scene-private"> 設為私人（訪客看不到，僅管理者可見）</label>
     <div class="modal-actions">
       <button class="btn btn-ghost" id="btn-cancel-edit-scene">取消</button>
       <button class="btn btn-primary" id="btn-confirm-edit-scene" style="flex:none; padding:8px 18px;">儲存變更</button>
@@ -1093,6 +1161,7 @@
     </div>
     <label class="field-label">點位備註（選填）</label>
     <input class="field-input" id="input-edit-point-note" placeholder="例：左岸護坡 / 樁號 1+250">
+    <label class="priv-row"><input type="checkbox" id="input-edit-point-private"> 設為私人（整個點位與其所有時期，訪客都看不到）</label>
     <div class="modal-actions">
       <button class="btn btn-ghost" id="btn-cancel-edit-point">取消</button>
       <button class="btn btn-primary" id="btn-confirm-edit-point" style="flex:none; padding:8px 18px;">儲存變更</button>
@@ -1163,6 +1232,23 @@
   </div>
 </div>
 
+<!-- ===== AI 分析資料台 ===== -->
+<div class="modal-overlay analysis-modal" id="modal-analysis">
+  <div class="modal">
+    <p class="modal-title">AI 分析資料台</p>
+    <p class="modal-sub">將每次判讀綁定場景、時期與視角；AI 結果須經專業人員複核後才能作為工程決策依據。</p>
+    <div class="ai-meta-grid" id="analysis-kpis"></div>
+    <div class="analysis-toolbar">
+      <select class="field-input" id="analysis-filter" style="width:auto; margin:0; padding:7px 10px;">
+        <option value="all">全部紀錄</option><option value="嚴重">嚴重／顯著</option><option value="待複核">待人工複核</option>
+      </select>
+      <button class="btn btn-sm" id="btn-analysis-csv">匯出 CSV</button>
+    </div>
+    <div class="analysis-table-wrap"><div id="analysis-list"></div></div>
+    <div class="modal-actions"><button class="btn btn-ghost" id="btn-close-analysis">關閉</button></div>
+  </div>
+</div>
+
 <div id="loading-overlay" class="hidden">
   <div class="loading-spinner"></div>
   <p class="loading-label">載入資料中，請稍候…</p>
@@ -1207,7 +1293,15 @@
   function setAdminUI(){
     document.body.classList.toggle('is-admin', isAdmin);
     const label = document.getElementById('admin-login-label');
-    if(label) label.textContent = isAdmin ? '管理模式' : '瀏覽模式';
+    if(label){
+      label.textContent = isAdmin
+        ? (serverState.adminEnabled ? '管理模式' : '本機編輯')
+        : '瀏覽模式';
+    }
+    const status = document.getElementById('save-server-status');
+    if(status && isAdmin && !serverState.storageReady){
+      status.textContent = '本機資料 · 請匯出備份';
+    }
   }
 
   // 上傳單一圖片檔到 R2，回傳同源資產 URL（/api/asset/<key>）
@@ -1486,10 +1580,64 @@
     });
   });
 
+  /* 地圖面板：可拖曳調整寬度，或收合至左側以放大全景 */
+  const mapPanel = document.getElementById('map-panel');
+  const mapPanelResizer = document.getElementById('map-panel-resizer');
+  const mapPanelToggle = document.getElementById('map-panel-toggle');
+  let mapPanelDragging = false;
+
+  function refreshCompareLayout(){
+    setTimeout(()=>{
+      pointEngine.resize(); pointEngineB.resize(); pointEngine.render(); pointEngineB.render();
+      if(geoMap){ geoMap.invalidateSize(); renderGeoPins(); }
+    },30);
+  }
+  function setMapPanelCollapsed(collapsed){
+    mapPanel.classList.toggle('collapsed', collapsed);
+    mapPanelToggle.textContent = collapsed ? '›' : '‹';
+    mapPanelToggle.title = collapsed ? '展開地圖' : '收合地圖';
+    try{ localStorage.setItem('panoMapCollapsed', collapsed?'1':'0'); }catch(e){}
+    refreshCompareLayout();
+  }
+  mapPanelToggle.addEventListener('click', e=>{
+    e.stopPropagation();
+    setMapPanelCollapsed(!mapPanel.classList.contains('collapsed'));
+  });
+  mapPanelResizer.addEventListener('pointerdown', e=>{
+    if(e.target===mapPanelToggle || window.matchMedia('(max-width:860px)').matches) return;
+    if(mapPanel.classList.contains('collapsed')) setMapPanelCollapsed(false);
+    mapPanelDragging=true;
+    mapPanel.classList.add('resizing'); mapPanelResizer.classList.add('dragging');
+    mapPanelResizer.setPointerCapture(e.pointerId);
+    e.preventDefault();
+  });
+  mapPanelResizer.addEventListener('pointermove', e=>{
+    if(!mapPanelDragging) return;
+    const rect=compareView.getBoundingClientRect();
+    const width=Math.max(260,Math.min(rect.width*0.55,e.clientX-rect.left));
+    mapPanel.style.width=width+'px';
+    try{ localStorage.setItem('panoMapPanelWidth',String(Math.round(width))); }catch(err){}
+    refreshCompareLayout();
+  });
+  function finishMapPanelDrag(){
+    mapPanelDragging=false; mapPanel.classList.remove('resizing'); mapPanelResizer.classList.remove('dragging');
+  }
+  mapPanelResizer.addEventListener('pointerup',finishMapPanelDrag);
+  mapPanelResizer.addEventListener('pointercancel',finishMapPanelDrag);
+  window.addEventListener('load',()=>{
+    if(window.matchMedia('(max-width:860px)').matches) return;
+    try{
+      const savedWidth=Number(localStorage.getItem('panoMapPanelWidth'));
+      if(savedWidth>=260) mapPanel.style.width=savedWidth+'px';
+      setMapPanelCollapsed(localStorage.getItem('panoMapCollapsed')==='1');
+    }catch(e){}
+  });
+
   /* =========================================================
      PART A：環景導覽模式（沿用既有邏輯）
   ========================================================= */
   let scenes = [];
+  let analysisRecords = [];
   let activeSceneId = null;
   let pendingUploadDataUrl = null;
 
@@ -1506,6 +1654,7 @@
   const fovReadout = document.getElementById('fov-readout');
   const hotspotBanner = document.getElementById('hotspot-banner');
   const hotspotLayer = (()=>{ const d=document.createElement('div'); d.style.position='absolute'; d.style.inset='0'; d.style.zIndex='15'; d.style.pointerEvents='none'; stage.appendChild(d); return d; })();
+  const aiMarkerLayer = (()=>{ const d=document.createElement('div'); d.style.position='absolute'; d.style.inset='0'; d.style.zIndex='16'; d.style.pointerEvents='none'; stage.appendChild(d); return d; })();
   let hotspotMode=false, pendingHotspotPos=null;
 
   tourEngine.bindDrag({
@@ -1546,6 +1695,29 @@
       el.querySelector('.hotspot-del-btn').addEventListener('click', e=>{ e.stopPropagation(); deleteHotspot(activeSceneId, h.id); });
       hotspotLayer.appendChild(el);
     });
+    placeAiMarkers();
+  }
+
+  // 將 AI 判讀紀錄畫成畫面上的標記點（依當時拍攝的 yaw/pitch 定位），點擊可回顧該筆判讀
+  function placeAiMarkers(){
+    aiMarkerLayer.innerHTML='';
+    const scene = scenes.find(s=>s.id===activeSceneId);
+    if(!scene) return;
+    const records = analysisRecords.filter(r=>r.type==='單期判讀' && r.locationId===scene.id && Number.isFinite(r.yaw) && Number.isFinite(r.pitch));
+    records.forEach(r=>{
+      const p = tourEngine.projectToScreen(r.yaw, r.pitch);
+      if(!p) return;
+      aiMarkerLayer.appendChild(buildAiMarkerEl(r, p));
+    });
+  }
+
+  function buildAiMarkerEl(record, p){
+    const el = document.createElement('div');
+    el.className = 'ai-marker sev-'+severityRank(record.level);
+    el.style.left = p.x+'px'; el.style.top = p.y+'px'; el.style.pointerEvents = 'auto';
+    el.innerHTML = `<div class="ai-marker-pin"><span>!</span></div><div class="ai-marker-label">${escapeHtml(record.summary||record.level||'AI 判讀')}</div>`;
+    el.addEventListener('click', e=>{ e.stopPropagation(); showAiRecordDetail(record); });
+    return el;
   }
 
   function renderSceneList(){
@@ -1562,7 +1734,7 @@
         <div class="scene-idx">${String(i+1).padStart(2,'0')}</div>
         <div class="scene-thumb" style="background-image:url('${s.src}')"></div>
         <div class="scene-meta">
-          <div class="scene-name">${escapeHtml(s.name)}</div>
+          <div class="scene-name">${s.isPrivate?'🔒 ':''}${escapeHtml(s.name)}</div>
           <div class="scene-tag">${s.hotspots.length} 熱點${s.note?' · '+escapeHtml(s.note):''}</div>
         </div>
         <div class="scene-edit" data-id="${s.id}" title="編輯場景">
@@ -1633,6 +1805,7 @@
     editingSceneId = sceneId;
     document.getElementById('input-edit-scene-name').value = scene.name;
     document.getElementById('input-edit-scene-note').value = scene.note || '';
+    document.getElementById('input-edit-scene-private').checked = !!scene.isPrivate;
     modalEditScene.classList.add('show');
   }
   document.getElementById('btn-cancel-edit-scene').addEventListener('click', ()=>modalEditScene.classList.remove('show'));
@@ -1644,6 +1817,7 @@
     if(!name){ showToast('請輸入場景名稱'); return; }
     scene.name = name;
     scene.note = document.getElementById('input-edit-scene-note').value.trim();
+    scene.isPrivate = document.getElementById('input-edit-scene-private').checked;
     if(activeSceneId===editingSceneId){
       sceneTitleEl.textContent = scene.name;
       sceneCoordsEl.textContent = scene.note || 'EQUIRECTANGULAR · NO METADATA';
@@ -2256,6 +2430,22 @@
     pointEngine.render(); pointEngineB.render();
   });
 
+  // AI 判讀標記層（跨期比對模式）：疊在 point-canvas 之上，隨 A 畫面 render 自動重繪
+  const pointAiMarkerLayer = (()=>{ const d=document.createElement('div'); d.style.position='absolute'; d.style.inset='0'; d.style.zIndex='16'; d.style.pointerEvents='none'; pointStage.appendChild(d); return d; })();
+  function placePointAiMarkers(){
+    pointAiMarkerLayer.innerHTML='';
+    const p = points.find(x=>x.id===activePointId);
+    if(!p) return;
+    const records = analysisRecords.filter(r=>r.type==='跨期比對' && r.locationId===p.id && Number.isFinite(r.yaw) && Number.isFinite(r.pitch));
+    records.forEach(r=>{
+      const pos = pointEngine.projectToScreen(r.yaw, r.pitch);
+      if(!pos) return;
+      pointAiMarkerLayer.appendChild(buildAiMarkerEl(r, pos));
+    });
+  }
+  const _pointEngineRender = pointEngine.render;
+  pointEngine.render = function(){ _pointEngineRender.call(pointEngine); placePointAiMarkers(); };
+
   const ptFovReadout = document.getElementById('pt-fov-readout');
   function setPtFov(v){
     pointEngine.setFov(v);
@@ -2318,6 +2508,7 @@
   function openEditPointModal(p){
     document.getElementById('input-edit-point-name').value = p.name;
     document.getElementById('input-edit-point-note').value = p.note || '';
+    document.getElementById('input-edit-point-private').checked = !!p.isPrivate;
     const coordRow = document.getElementById('edit-point-coord-row');
     if(p.kind === 'geo'){
       coordRow.style.display = 'flex';
@@ -2337,6 +2528,7 @@
     if(!name){ showToast('請輸入點位名稱'); return; }
     p.name = name;
     p.note = document.getElementById('input-edit-point-note').value.trim();
+    p.isPrivate = document.getElementById('input-edit-point-private').checked;
     if(p.kind === 'geo'){
       const lat = parseFloat(document.getElementById('input-edit-point-lat').value);
       const lon = parseFloat(document.getElementById('input-edit-point-lon').value);
@@ -2362,9 +2554,19 @@
     const sorted = [...p.epochs].sort((a,b)=> (a.year+String(a.month||'').padStart(2,'0')).localeCompare(b.year+String(b.month||'').padStart(2,'0')));
     epochTabs.innerHTML = sorted.map(e=>`
       <div class="epoch-tab ${e.id===activeEpochId?'active':''}" data-id="${e.id}">
-        <span class="dot"></span>${epochLabel(e)}<span class="epoch-del-btn" data-id="${e.id}" title="刪除此時期">×</span>
+        <span class="dot"></span>${epochLabel(e)}${e.isPrivate?'<span class="priv-badge">🔒</span>':''}<span class="epoch-lock-btn ${e.isPrivate?'on':''}" data-id="${e.id}" title="${e.isPrivate?'目前私人，點擊改為公開':'目前公開，點擊改為私人'}">${e.isPrivate?'公開':'設私人'}</span><span class="epoch-del-btn" data-id="${e.id}" title="刪除此時期">×</span>
       </div>
     `).join('') + `<div class="epoch-add-tab" id="epoch-tabs-add">+ 時期</div>`;
+    epochTabs.querySelectorAll('.epoch-lock-btn').forEach(btn=>{
+      btn.addEventListener('click', ev=>{
+        ev.stopPropagation();
+        const ep = p.epochs.find(x=>x.id===btn.dataset.id);
+        if(!ep) return;
+        ep.isPrivate = !ep.isPrivate;
+        markEpochDirty(p.id, ep.id); scheduleSave(); renderEpochTabs();
+        showToast(ep.isPrivate ? '此時期已設為私人' : '此時期已設為公開');
+      });
+    });
     epochTabs.querySelectorAll('.epoch-tab').forEach(el=>{
       el.addEventListener('click', ()=>selectEpoch(el.dataset.id));
     });
@@ -2635,14 +2837,15 @@
     return {
       version: 1,
       savedAt: new Date().toISOString(),
+      analysisRecords,
       scenes: scenes.map(s=>({
-        id:s.id, name:s.name, note:s.note, src:s.src,
+        id:s.id, name:s.name, note:s.note, src:s.src, isPrivate:!!s.isPrivate,
         hotspots: s.hotspots.map(h=>({ id:h.id, yaw:h.yaw, pitch:h.pitch, targetId:h.targetId, label:h.label }))
       })),
       basemap: basemap ? { src:basemap.src, name:basemap.name } : null,
       points: points.map(p=>{
-        const base = { id:p.id, kind:p.kind, name:p.name, note:p.note,
-          epochs: p.epochs.map(e=>({ id:e.id, year:e.year, month:e.month, note:e.note, src:e.src, yawOffset:e.yawOffset||0 })) };
+        const base = { id:p.id, kind:p.kind, name:p.name, note:p.note, isPrivate:!!p.isPrivate,
+          epochs: p.epochs.map(e=>({ id:e.id, year:e.year, month:e.month, note:e.note, src:e.src, yawOffset:e.yawOffset||0, isPrivate:!!e.isPrivate })) };
         if(p.kind==='geo'){ base.lat=p.lat; base.lon=p.lon; }
         else { base.x=p.x; base.y=p.y; }
         return base;
@@ -2663,12 +2866,13 @@
 
   async function restoreState(data){
     if(!data) return;
+    analysisRecords = Array.isArray(data.analysisRecords) ? data.analysisRecords : [];
     // 場景
     scenes = [];
     for(const s of (data.scenes||[])){
       const img = await loadImageAsync(s.src);
       if(!img) continue;
-      scenes.push({ id:s.id, name:s.name, note:s.note, img, src:s.src, hotspots:s.hotspots||[] });
+      scenes.push({ id:s.id, name:s.name, note:s.note, img, src:s.src, isPrivate:!!s.isPrivate, hotspots:s.hotspots||[] });
     }
     renderSceneList();
     if(scenes.length){ loadScene(scenes[0].id); }
@@ -2692,9 +2896,9 @@
       for(const e of (p.epochs||[])){
         const img = await loadImageAsync(e.src);
         if(!img) continue;
-        epochs.push({ id:e.id, year:e.year, month:e.month, note:e.note, img, src:e.src, yawOffset:e.yawOffset||0 });
+        epochs.push({ id:e.id, year:e.year, month:e.month, note:e.note, img, src:e.src, yawOffset:e.yawOffset||0, isPrivate:!!e.isPrivate });
       }
-      const restored = { id:p.id, kind:p.kind, name:p.name, note:p.note, epochs };
+      const restored = { id:p.id, kind:p.kind, name:p.name, note:p.note, isPrivate:!!p.isPrivate, epochs };
       if(p.kind==='geo'){ restored.lat=p.lat; restored.lon=p.lon; }
       else { restored.x=p.x; restored.y=p.y; }
       points.push(restored);
@@ -2777,7 +2981,8 @@
     const overlay = document.getElementById('loading-overlay');
     overlay.classList.remove('hidden');
     try{
-      const res = await fetch('/api/state', {signal: AbortSignal.timeout(60000)});
+      const headers = isAdmin ? {'X-Admin-Password': adminPassword} : {};
+      const res = await fetch('/api/state', {headers, cache:'no-store', signal: AbortSignal.timeout(60000)});
       if(res.ok){
         const data = await res.json();
         await restoreState(data);
@@ -3155,8 +3360,31 @@ ${SHARE_BODY}
     modalAi.classList.add('show');
   }
   function aiShowError(msg){
-    aiModalBody.innerHTML = `<p class="ai-error">分析失敗：${escapeHtml(msg)}</p>
-      <p class="ai-error" style="color:var(--text-low); margin-top:8px;">請確認後端服務運作中、且已於 Render 設定 ANTHROPIC_API_KEY。</p>`;
+    const raw = String(msg||'未知錯誤');
+    if(/prepayment credits are depleted|RESOURCE_EXHAUSTED/i.test(raw)){
+      aiModalBody.innerHTML = `
+        <div class="ai-result-summary" style="border-color:#6b3329; background:rgba(217,106,90,.1);">
+          Gemini 專案目前沒有可用額度，因此暫時無法執行分析。
+        </div>
+        <p class="ai-error" style="color:var(--text-mid);">請到 Google AI Studio 檢查此 API Key 所屬專案。若使用付費方案，請補充預付額度；若要使用免費方案，請改用 Free Tier 專案所建立的 API Key。</p>
+        <div class="ai-actions">
+          <a class="btn btn-sm" href="https://aistudio.google.com/app/billing" target="_blank" rel="noopener">開啟 AI Studio Billing</a>
+          <a class="btn btn-sm" href="https://aistudio.google.com/app/apikey" target="_blank" rel="noopener">管理 API Key</a>
+        </div>`;
+      return;
+    }
+    if(/429|rate.?limit|quota/i.test(raw)){
+      aiModalBody.innerHTML = `<p class="ai-error">Gemini 請求次數或用量已達限制，請稍後再試，或到 AI Studio 查看配額。</p>
+        <div class="ai-actions"><a class="btn btn-sm" href="https://aistudio.google.com/app/usage" target="_blank" rel="noopener">查看使用量</a></div>`;
+      return;
+    }
+    if(/API.?key|PERMISSION_DENIED|401|403/i.test(raw)){
+      aiModalBody.innerHTML = `<p class="ai-error">Gemini API Key 無效、受限或沒有模型存取權限。</p>
+        <p class="ai-error" style="color:var(--text-low); margin-top:8px;">請在 AI Studio 重新建立金鑰，再更新本機 .env.local。</p>`;
+      return;
+    }
+    aiModalBody.innerHTML = `<p class="ai-error">分析失敗：${escapeHtml(raw)}</p>
+      <p class="ai-error" style="color:var(--text-low); margin-top:8px;">請確認 Flask 後端仍在執行，並檢查 logs/flask-error.log。</p>`;
   }
   function condClass(level){
     if(['良好','無明顯變化'].includes(level)) return 'good';
@@ -3171,14 +3399,21 @@ ${SHARE_BODY}
         <div class="ai-obs-body">${main}<div class="ai-obs-loc">${escapeHtml(o.location||'')}</div></div></li>`;
     }).join('') + '</ul>';
   }
-  function renderAiResult(level, summary, observations, report, typeKey){
+  function renderAiResult(level, summary, observations, report, typeKey, result){
+    const confidence = Number(result && result.confidence);
+    const confidenceText = Number.isFinite(confidence) ? Math.round(confidence*100)+'%' : '待複核';
     aiModalBody.innerHTML = `
       <span class="ai-badge ${condClass(level)}">${escapeHtml(level)}</span>
       <div class="ai-result-summary">${escapeHtml(summary)}</div>
+      <div class="ai-meta-grid">
+        <div class="ai-meta-card"><span>AI 信心值</span><b>${escapeHtml(confidenceText)}</b></div>
+        <div class="ai-meta-card"><span>建議處置</span><b style="font-size:12px">${escapeHtml((result&&result.recommended_action)||'現場複核')}</b></div>
+        <div class="ai-meta-card"><span>資料狀態</span><b style="font-size:12px">待人工複核</b></div>
+      </div>
       ${renderObservations(observations, typeKey)}
       <div class="ai-report-label">現勘報告草稿</div>
       <div class="ai-report" id="ai-report-text">${escapeHtml(report)}</div>
-      <button class="btn btn-sm ai-copy-btn" id="ai-copy-btn">複製報告文字</button>`;
+      <div class="ai-actions"><button class="btn btn-sm ai-copy-btn" id="ai-copy-btn">複製報告文字</button><button class="btn btn-sm" id="ai-open-data">開啟分析資料台</button></div>`;
     const copyBtn = document.getElementById('ai-copy-btn');
     copyBtn.addEventListener('click', ()=>{
       navigator.clipboard.writeText(report).then(
@@ -3186,7 +3421,49 @@ ${SHARE_BODY}
         ()=>showToast('複製失敗')
       );
     });
+    document.getElementById('ai-open-data').addEventListener('click', ()=>{ modalAi.classList.remove('show'); openAnalysisDashboard(); });
   }
+
+  // 點擊畫面上的 AI 標記，回顧該筆歷史判讀（不重新呼叫 AI，只顯示當時儲存的結果）
+  function showAiRecordDetail(record){
+    aiModalTitle.textContent = record.type==='跨期比對' ? 'AI 跨時期比對（歷史紀錄）' : 'AI 視角分析（歷史紀錄）';
+    aiModalSub.textContent = `${record.locationName}　${record.epochLabel||''}　${new Date(record.createdAt).toLocaleString('zh-TW')}`;
+    modalAi.classList.add('show');
+    renderAiResult(record.level, record.summary, record.observations, record.report, record.type==='跨期比對', {
+      confidence: record.confidence, recommended_action: record.recommendedAction,
+    });
+  }
+
+  function addAnalysisRecord(record){
+    analysisRecords.unshift(Object.assign({ id:'ai-'+Date.now(), createdAt:new Date().toISOString(), reviewStatus:'待複核' }, record));
+    scheduleSave();
+  }
+
+  function severityRank(text){
+    if(/嚴重|顯著/.test(text||'')) return 3;
+    if(/中度|警告/.test(text||'')) return 2;
+    if(/輕微|注意/.test(text||'')) return 1;
+    return 0;
+  }
+
+  const modalAnalysis=document.getElementById('modal-analysis');
+  function openAnalysisDashboard(){ renderAnalysisDashboard(); modalAnalysis.classList.add('show'); }
+  function renderAnalysisDashboard(){
+    const severe=analysisRecords.filter(r=>severityRank(r.level)>=3).length;
+    const pending=analysisRecords.filter(r=>r.reviewStatus!=='已複核').length;
+    document.getElementById('analysis-kpis').innerHTML=`<div class="ai-meta-card"><span>分析總數</span><b>${analysisRecords.length}</b></div><div class="ai-meta-card"><span>高風險</span><b>${severe}</b></div><div class="ai-meta-card"><span>待複核</span><b>${pending}</b></div>`;
+    const filter=document.getElementById('analysis-filter').value;
+    const rows=analysisRecords.filter(r=>filter==='all'||(filter==='嚴重'&&severityRank(r.level)>=3)||(filter==='待複核'&&r.reviewStatus!=='已複核'));
+    document.getElementById('analysis-list').innerHTML=rows.length?`<table class="analysis-table"><thead><tr><th>時間</th><th>類型</th><th>場景／點位</th><th>判定</th><th>摘要</th><th>狀態</th></tr></thead><tbody>${rows.map(r=>`<tr><td>${escapeHtml(new Date(r.createdAt).toLocaleString('zh-TW'))}</td><td>${escapeHtml(r.type)}</td><td>${escapeHtml(r.locationName)}</td><td><span class="ai-badge ${condClass(r.level)}" style="margin:0">${escapeHtml(r.level)}</span></td><td>${escapeHtml(r.summary)}</td><td>${escapeHtml(r.reviewStatus)}</td></tr>`).join('')}</tbody></table>`:'<div class="analysis-empty">尚無符合條件的分析紀錄</div>';
+  }
+  document.getElementById('btn-ai-history').addEventListener('click',openAnalysisDashboard);
+  document.getElementById('btn-close-analysis').addEventListener('click',()=>modalAnalysis.classList.remove('show'));
+  document.getElementById('analysis-filter').addEventListener('change',renderAnalysisDashboard);
+  document.getElementById('btn-analysis-csv').addEventListener('click',()=>{
+    const q=v=>'"'+String(v==null?'':v).replace(/"/g,'""')+'"';
+    const csv='\ufeff時間,類型,場景或點位,時期,視角,判定,信心值,摘要,建議處置,複核狀態\n'+analysisRecords.map(r=>[r.createdAt,r.type,r.locationName,r.epochLabel,r.view,r.level,r.confidence,r.summary,r.recommendedAction,r.reviewStatus].map(q).join(',')).join('\n');
+    const a=document.createElement('a'); a.href=URL.createObjectURL(new Blob([csv],{type:'text/csv;charset=utf-8'})); a.download='AI分析紀錄-'+new Date().toISOString().slice(0,10)+'.csv'; a.click(); setTimeout(()=>URL.revokeObjectURL(a.href),1000);
+  });
 
   async function postJson(url, payload){
     const res = await fetch(url, {
@@ -3206,7 +3483,9 @@ ${SHARE_BODY}
     aiShowLoading('AI 視角分析', `場景：${scene.name}`, 'AI 判讀損壞／異常中…');
     try{
       const r = await postJson('/api/analyze', { image, point_name:scene.name, epoch_label:scene.note||'' });
-      renderAiResult(r.overall_condition, r.summary, r.observations, r.report, false);
+      addAnalysisRecord({ type:'單期判讀', locationId:scene.id, locationName:scene.name, epochLabel:scene.note||'', yaw:tourEngine.state.yaw, pitch:tourEngine.state.pitch, view:`yaw ${tourEngine.state.yaw.toFixed(3)} / pitch ${tourEngine.state.pitch.toFixed(3)} / FOV ${Math.round(tourEngine.state.fov*180/Math.PI)}°`, level:r.overall_condition, confidence:r.confidence, summary:r.summary, observations:r.observations||[], report:r.report, recommendedAction:r.recommended_action||'現場複核' });
+      renderAiResult(r.overall_condition, r.summary, r.observations, r.report, false, r);
+      placeAiMarkers();
     }catch(e){ aiShowError(e.message); }
   });
 
@@ -3238,7 +3517,9 @@ ${SHARE_BODY}
       const r = await postJson('/api/compare', {
         image_a, image_b, point_name:p.name, label_a:epochLabel(eA), label_b:epochLabel(eB)
       });
-      renderAiResult(r.change_level, r.summary, r.changes, r.report, true);
+      addAnalysisRecord({ type:'跨期比對', locationId:p.id, locationName:p.name, epochLabel:`${epochLabel(eA)} ↔ ${epochLabel(eB)}`, yaw:pointEngine.state.yaw, pitch:pointEngine.state.pitch, view:`yaw ${pointEngine.state.yaw.toFixed(3)} / pitch ${pointEngine.state.pitch.toFixed(3)} / FOV ${Math.round(pointEngine.state.fov*180/Math.PI)}°`, level:r.change_level, confidence:r.confidence, summary:r.summary, observations:r.changes||[], report:r.report, recommendedAction:r.recommended_action||'現場複核' });
+      renderAiResult(r.change_level, r.summary, r.changes, r.report, true, r);
+      placePointAiMarkers();
     }catch(e){ aiShowError(e.message); }
   });
 
@@ -3309,15 +3590,20 @@ ${SHARE_BODY}
     const d = await res.json().catch(()=>({}));
     return !!d.ok;
   }
-  function logoutAdmin(){
+  async function logoutAdmin(){
     isAdmin=false; adminPassword='';
     try{ localStorage.removeItem('panoAdminPwd'); }catch(e){}
+    try{ await fetch('/api/admin-logout', {method:'POST'}); }catch(e){}
     setAdminUI(); showToast('已登出，回到瀏覽模式');
+    if(serverState.hasBackend) await loadFromServer(); // 改回只看公開資料
   }
 
   document.getElementById('btn-admin-login').addEventListener('click', ()=>{
+    if(!serverState.adminEnabled){
+      showToast('目前為本機編輯模式，可直接新增場景；完成後請匯出備份');
+      return;
+    }
     if(isAdmin){ if(confirm('要登出管理模式嗎？')) logoutAdmin(); return; }
-    if(!serverState.adminEnabled){ showToast('此網站尚未啟用管理者功能（需於後端設定 ADMIN_PASSWORD）'); return; }
     inputAdminPwd.value=''; adminLoginErr.style.display='none';
     modalAdmin.classList.add('show'); setTimeout(()=>inputAdminPwd.focus(), 50);
   });
@@ -3332,6 +3618,8 @@ ${SHARE_BODY}
       isAdmin=true; adminPassword=pwd;
       try{ localStorage.setItem('panoAdminPwd', pwd); }catch(e){}
       setAdminUI(); modalAdmin.classList.remove('show'); showToast('已進入管理模式，可上傳與編輯');
+      // 重新載入含私人項目的完整資料；否則之後儲存會把私人項目覆蓋掉
+      if(serverState.hasBackend) await loadFromServer();
     } else {
       adminLoginErr.style.display='block';
     }
@@ -3359,6 +3647,10 @@ ${SHARE_BODY}
     if(serverState.adminEnabled){
       let saved=''; try{ saved = localStorage.getItem('panoAdminPwd')||''; }catch(e){}
       if(saved){ try{ if(await tryAdminLogin(saved)){ isAdmin=true; adminPassword=saved; } }catch(e){} }
+    } else {
+      // 本機單人使用且後端未設定管理密碼時，直接開放編輯入口。
+      // 若日後部署為多人共用，只要設定 ADMIN_PASSWORD 即恢復登入保護。
+      isAdmin = true;
     }
     setAdminUI();
 

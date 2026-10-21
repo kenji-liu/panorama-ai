@@ -1,0 +1,8 @@
+# 本機密鑰與執行紀錄不得進入版本庫
+.env.local
+.env.groq.local
+logs/
+
+# Python 暫存
+__pycache__/
+*.py[cod]
