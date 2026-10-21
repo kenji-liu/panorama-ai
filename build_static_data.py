@@ -17,18 +17,41 @@ ROOT = os.path.dirname(os.path.abspath(__file__))
 DATA = os.path.join(ROOT, "data")
 ASSETS = os.path.join(DATA, "assets")
 
-# 環景導覽路線：由上游到下游。每筆 = (Kuula ID, 場景名稱, 熱點位置)
-# 熱點位置是在全景圖水平方向的比例 0~1（0.5 = 圖片正中央），"down"=往下一站、"up"=回上一站。
-# 位置是依畫面中河川流向目測的近似值，需要微調時改這裡的數字後重新執行即可。
+# 環景導覽路線：沿高屏溪由上游到下游。
+# 每站 = (Kuula ID, 場景名稱, 拍攝點緯度, 經度, 全景圖正中央的羅盤方位角 HEADING)
+# 熱點位置 = 由「本站座標 → 下一站／上一站座標」算出的方位角，再減去 HEADING 換算成畫面水平位置。
+# HEADING 是用 OpenStreetMap 上的橋樑座標（里嶺大橋、高屏溪斜張橋、高屏大橋、萬大大橋）與
+# 畫面中橋塔／橋身實際出現的位置反推而得（第 2、3、4、5 站直接對到橋；第 1、6 站對山形、河道與工業區）。
 ROUTE = [
-    ("52mWd", "里港大橋下游", {"down": 0.22}),
-    ("L8K4R", "里嶺大橋上游", {"up": 0.13, "down": 0.55}),
-    ("hMbdw", "高屏溪斜張橋下游", {"up": 0.12, "down": 0.52}),
-    ("L8crR", "高屏大橋下游", {"up": 0.30, "down": 0.70}),
-    ("hv4SS", "萬大橋下游", {"up": 0.12, "down": 0.93}),
-    ("L8cSt", "萬丹堰／固床工下游", {"up": 0.62}),
+    ("52mWd", "里港大橋下游", 22.78333, 120.46667, 200),
+    ("L8K4R", "里嶺大橋上游", 22.77515, 120.45093, 120),
+    ("5qh6V", "高屏溪斜張橋下游", 22.75445, 120.44890, 188),
+    ("L8crR", "高屏大橋下游", 22.63638, 120.43402, 78),
+    ("hv4SS", "萬大橋下游", 22.57946, 120.43961, 73),
+    ("L8cSt", "萬丹堰／固床工下游", 22.55332, 120.43676, 20),
 ]
+# 相鄰兩站太近或中間隔著橋時，熱點改瞄準途經的地標（OSM 座標），這樣才會落在河道上
+VIA = {
+    ("L8K4R", "5qh6V"): (22.7620, 120.4610),  # 高屏溪斜張橋
+    ("5qh6V", "L8K4R"): (22.7620, 120.4610),
+}
 HOTSPOT_PITCH = -0.12  # 略低於地平線，落在河面／地面上
+
+
+def bearing(a, b):
+    """由座標 a 看向座標 b 的羅盤方位角（度，北=0、順時針）。"""
+    import math
+    la1, lo1, la2, lo2 = (math.radians(v) for v in (a[0], a[1], b[0], b[1]))
+    y = math.sin(lo2 - lo1) * math.cos(la2)
+    x = math.cos(la1) * math.sin(la2) - math.sin(la1) * math.cos(la2) * math.cos(lo2 - lo1)
+    return (math.degrees(math.atan2(y, x)) + 360) % 360
+
+
+def yaw_to(src, dst, heading):
+    """換算成導覽引擎的 yaw（弳度，0=畫面正中央，往右為正）。"""
+    import math
+    d = ((bearing(src, dst) - heading + 180) % 360) - 180
+    return round(math.radians(d), 4)
 
 
 def build_scenes(epoch_note):
@@ -37,7 +60,11 @@ def build_scenes(epoch_note):
 
     route = [r for r in ROUTE if os.path.exists(os.path.join(ASSETS, "%s.jpg" % r[0]))]
     scenes = []
-    for i, (kid, name, pos) in enumerate(route):
+    for i, (kid, name, lat, lon, heading) in enumerate(route):
+        here = (lat, lon)
+
+        def aim(other):
+            return VIA.get((kid, other[0]), (other[2], other[3]))
         thumb = "t_%s.jpg" % kid
         tpath = os.path.join(ASSETS, thumb)
         if not os.path.exists(tpath):
@@ -45,17 +72,19 @@ def build_scenes(epoch_note):
             im.thumbnail((480, 240))
             im.save(tpath, quality=75)
         hotspots = []
-        if i + 1 < len(route) and "down" in pos:
-            hotspots.append({"id": "hs-%s-down" % kid, "yaw": round((pos["down"] - 0.5) * 6.283185, 4),
-                             "pitch": HOTSPOT_PITCH, "targetId": "sc-" + route[i + 1][0],
-                             "label": "往下游：" + route[i + 1][1]})
-        if i > 0 and "up" in pos:
-            hotspots.append({"id": "hs-%s-up" % kid, "yaw": round((pos["up"] - 0.5) * 6.283185, 4),
-                             "pitch": HOTSPOT_PITCH, "targetId": "sc-" + route[i - 1][0],
-                             "label": "往上游：" + route[i - 1][1]})
+        if i + 1 < len(route):
+            nxt = route[i + 1]
+            hotspots.append({"id": "hs-%s-down" % kid, "yaw": yaw_to(here, aim(nxt), heading),
+                             "pitch": HOTSPOT_PITCH, "targetId": "sc-" + nxt[0],
+                             "label": "往下游：" + nxt[1]})
+        if i > 0:
+            prv = route[i - 1]
+            hotspots.append({"id": "hs-%s-up" % kid, "yaw": yaw_to(here, aim(prv), heading),
+                             "pitch": HOTSPOT_PITCH, "targetId": "sc-" + prv[0],
+                             "label": "往上游：" + prv[1]})
         scenes.append({
             "id": "sc-" + kid, "name": name,
-            "note": "最新影像 " + epoch_note.get(kid, ""),
+            "note": "拍攝日期 " + epoch_note.get(kid, ""),
             "src": "/data/assets/%s.jpg" % kid, "thumb": "/data/assets/%s" % thumb,
             "isPrivate": False, "hotspots": hotspots,
             "startYaw": hotspots[0]["yaw"] if hotspots else 0,
