@@ -1689,7 +1689,7 @@
   /* ---- 報告判釋範圍（約略位置）：範圍/標籤以 yaw·pitch 存放，依目前視角即時投影 ---- */
   let annotationsData = {};
   let annVisible = true; try{ annVisible = localStorage.getItem('panoAnn') !== '0'; }catch(e){}
-  const ANN_COLOR = { wet:'#ff7b6b', dredge:'#ffd23f', seed:'#7bd46a', veg:'#5fd0a0', mark:'#8fd0ff' };
+  const ANN_COLOR = { wet:'#ff7b6b', dredge:'#ffd23f', seed:'#7bd46a', veg:'#5fd0a0', mark:'#8fd0ff', pole:'#ffb347' };
   const ANN_NEAR = 0.03;
   function annKey(src){ const m = /\/([A-Za-z0-9]+)\.jpg/.exec(src||''); return m ? m[1] : null; }
   function createAnnLayer(container){
@@ -1758,11 +1758,19 @@
     const aspect = vp.w/vp.h;
     const px = v => [ (((v[0]/v[2])/(vp.tanHalf*aspect))*0.5+0.5)*vp.w, (1-(((v[1]/v[2])/vp.tanHalf)*0.5+0.5))*vp.h ];
     const NS = 'http://www.w3.org/2000/svg';
+    const placed = [];
     const addTag = (at, text, color)=>{
       const v = engine.projectRaw(at[0], at[1]);
       if(v[2] < 0.05) return;
-      const [x,y] = px(v);
-      if(x < 10 || x > vp.w-10 || y < 26 || y > vp.h-8) return;
+      const [x,y0] = px(v);
+      if(x < 10 || x > vp.w-10 || y0 < 26 || y0 > vp.h-8) return;
+      // 標籤彼此重疊時往上錯開（以文字長度估算寬度）
+      const w = text.length*12 + 26, h = 22;
+      let y = y0, tries = 0;
+      const hit = yy => placed.some(r => Math.abs(r.x - x) < (r.w + w)/2 && Math.abs(r.y - yy) < h);
+      while(hit(y) && tries < 6){ y -= h + 2; tries++; }
+      if(y < 26) y = y0;
+      placed.push({ x, y, w });
       const d = document.createElement('div'); d.className = 'ann-tag'; d.style.setProperty('--c', color);
       d.style.left = x+'px'; d.style.top = y+'px'; d.textContent = text; tags.appendChild(d);
     };
@@ -2950,6 +2958,8 @@
   pointEngine.bindDrag({ onChange: ()=>{
     ptFovReadout.textContent = Math.round(pointEngine.state.fov*180/Math.PI)+'°';
     if(splitOn && !calibrating) syncSplitB();
+    // 拖曳／滾輪縮放走引擎內部 render，不會經過上面包裝過的 pointEngine.render，要在這裡同步疊圖與標記
+    placePointAiMarkers(); renderPointAnn();
   }});
 
   /* ---- 校準模式：拖曳 B 畫面單獨調整其方位偏移量 ---- */
