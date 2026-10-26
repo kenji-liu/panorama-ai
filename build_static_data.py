@@ -100,7 +100,18 @@ def main():
     # 永遠不公開的相片：5wlWS = 標題只有 1130612、座標在南投的那張（使用者要求刪除）
     excluded = {"5wlWS"} | {x.strip() for x in args.exclude.split(",") if x.strip()}
 
-    items = json.load(open(os.path.join(args.dir, "kuula_manifest.json"), encoding="utf-8-sig"))
+    # 清單與圖檔優先讀下載資料夾；下載的檔案刪掉後，清單改用 kuula_fetch.py 內建的對照表、
+    # 圖檔改用專案內 data/assets 的備份，所以下載資料夾的檔案可以安全刪除。
+    manifest = os.path.join(args.dir, "kuula_manifest.json")
+    if os.path.exists(manifest):
+        items = json.load(open(manifest, encoding="utf-8-sig"))
+    else:
+        from kuula_fetch import ROWS
+        items = []
+        for row in ROWS:
+            pid, _uuid, lat, lng, title = row.split("|", 4)
+            items.append({"id": pid, "title": title,
+                          "lat": float(lat) if lat else None, "lng": float(lng) if lng else None})
     os.makedirs(ASSETS, exist_ok=True)
 
     groups, skipped = {}, []
@@ -109,6 +120,8 @@ def main():
             skipped.append((it["id"], it["title"], "已排除（不公開）"))
             continue
         src = os.path.join(args.dir, "kuula_%s.jpg" % it["id"])
+        if not os.path.exists(src):
+            src = os.path.join(ASSETS, "%s.jpg" % it["id"])
         if not os.path.exists(src):
             skipped.append((it["id"], it["title"], "檔案不存在"))
             continue
@@ -127,7 +140,8 @@ def main():
         epochs = []
         for e in sorted(eps, key=lambda x: (x["y"], x["mo"], x["d"])):
             dst = os.path.join(ASSETS, "%s.jpg" % e["id"])
-            if not (os.path.exists(dst) and os.path.getsize(dst) == os.path.getsize(e["src"])):
+            if os.path.abspath(e["src"]) != os.path.abspath(dst) and not (
+                    os.path.exists(dst) and os.path.getsize(dst) == os.path.getsize(e["src"])):
                 shutil.copyfile(e["src"], dst)
             epochs.append({
                 "id": "ep-" + e["id"], "year": e["y"], "month": e["mo"],
