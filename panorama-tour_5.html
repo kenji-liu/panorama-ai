@@ -244,10 +244,13 @@
   .draw-ui button.on{ background:var(--accent); border-color:var(--accent); color:#1a1208; font-weight:700; }
   .draw-hint{ display:flex; flex-wrap:wrap; align-items:center; gap:6px 12px; background:rgba(12,14,17,.86); border:1px solid var(--accent-dim); border-radius:8px; padding:6px 10px; }
   .draw-tol{ display:flex; align-items:center; gap:6px; }
-  .draw-tol input{ width:130px; accent-color:var(--accent); }
+  .draw-tol input{ width:96px; accent-color:var(--accent); }
   .draw-list{ width:min(330px,100%); max-height:min(300px,42vh); overflow:auto; background:rgba(12,14,17,.94); border:1px solid #ffffff33; border-radius:8px; padding:10px; }
   .draw-list-h{ margin:0 0 4px; font-weight:700; }
-  .draw-row{ display:grid; grid-template-columns:10px minmax(0,1fr) auto auto auto; align-items:center; gap:6px; padding:5px 0; border-top:1px solid #ffffff1f; }
+  .draw-sign{ display:flex; align-items:center; gap:4px; }
+  .draw-row input{ width:15px; height:15px; margin:0; accent-color:var(--accent); }
+  .draw-ui button:disabled{ opacity:.45; cursor:default; }
+  .draw-row{ display:grid; grid-template-columns:15px 10px minmax(0,1fr) auto auto auto; align-items:center; gap:6px; padding:5px 0; border-top:1px solid #ffffff1f; }
   .draw-row i{ width:9px; height:9px; border-radius:50%; }
   .draw-row span{ overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
   .draw-row small{ display:block; color:#a9b4bb; font-size:10.5px; }
@@ -1771,6 +1774,8 @@
     return out;
   }
 
+  const outerRings = it => it.parts || [it.poly];            // 一個面可由多塊組成
+  const allRings = it => outerRings(it).concat(it.holes || []); // holes 是扣掉的內部範圍
   function renderAnn(layer, engine, ann, key){
     const svg = layer.querySelector('.ann-svg'), tags = layer.querySelector('.ann-tags'), badge = layer.querySelector('.ann-badge');
     svg.innerHTML = ''; tags.innerHTML = '';
@@ -1813,7 +1818,8 @@
       if(item && !item.draft) d.dataset.ref = annSig(item);
     };
     items.forEach(it=>{
-      const color = ANN_COLOR[it.k] || '#fff';
+      const color = it.color || ANN_COLOR[it.k] || '#fff';
+      const text = (it.user || it.draft) ? [it.label, measureText(it, key)].filter(Boolean).join('｜') : it.label;
       if(it.t === 'vertex'){ // 繪製中的頂點
         const v = engine.projectRaw(it.at[0], it.at[1]);
         if(v[2] >= 0.05){
@@ -1826,17 +1832,20 @@
         return;
       }
       if(it.t === 'area'){
-        let pts = [];
-        for(let i=0;i<it.poly.length;i++) pts = pts.concat(annDensify(it.poly[i], it.poly[(i+1)%it.poly.length]));
-        const cam = annClipNear(pts.map(p=>engine.projectRaw(p[0],p[1])));
-        if(cam.length >= 3){
-          const el = document.createElementNS(NS,'polygon');
-          el.setAttribute('points', cam.map(v=>px(v).map(n=>n.toFixed(1)).join(',')).join(' '));
+        const d = allRings(it).map(ring=>{
+          let pts = [];
+          for(let i=0;i<ring.length;i++) pts = pts.concat(annDensify(ring[i], ring[(i+1)%ring.length]));
+          const cam = annClipNear(pts.map(p=>engine.projectRaw(p[0],p[1])));
+          return cam.length >= 3 ? 'M'+cam.map(v=>px(v).map(n=>n.toFixed(1)).join(' ')).join('L')+'Z' : '';
+        }).join('');
+        if(d){
+          const el = document.createElementNS(NS,'path');
+          el.setAttribute('d', d); el.setAttribute('fill-rule', 'evenodd');
           el.setAttribute('fill', color); el.setAttribute('fill-opacity', '0.16');
           el.setAttribute('stroke', color); el.setAttribute('stroke-width', '2'); el.setAttribute('stroke-dasharray', '7 5');
           svg.appendChild(el);
         }
-        addTag(it.at, it.label, color, it);
+        addTag(it.at, text, color, it);
       } else if(it.t === 'line'){
         let pts = [];
         for(let i=0;i+1<it.pts.length;i++) pts = pts.concat(annDensify(it.pts[i], it.pts[i+1]));
@@ -1848,7 +1857,7 @@
           el.setAttribute('fill', 'none'); el.setAttribute('stroke', color); el.setAttribute('stroke-width', '3.5');
           svg.appendChild(el);
         }
-        addTag(it.at, it.label, color, it);
+        addTag(it.at, text, color, it);
       } else {
         const v = engine.projectRaw(it.at[0], it.at[1]);
         if(v[2] >= 0.05){
@@ -1860,7 +1869,7 @@
             svg.appendChild(c);
           }
         }
-        addTag(it.at, it.label, color, it);
+        addTag(it.at, text, color, it);
       }
     });
   }
@@ -1885,7 +1894,8 @@
   Object.assign(ANN_COLOR, { dry:'#ff9f43', water:'#4aa3ff', other:'#c9a7ff' });
   const kindName = k => (ANN_KINDS.find(x=>x[0]===k)||[k, k==='dredge'?'疏濬區':k==='seed'?'撒草籽區':'其他'])[1];
   const TYPE_NAME = { point:'點', line:'線', area:'面' };
-  const draw = { host:null, engine:null, getKey:null, mode:null, key:null, pts:[], auto:null, seed:null, tol:24, radius:20 };
+  const draw = { host:null, engine:null, getKey:null, mode:null, key:null, pts:[], auto:null, seeds:[], sign:1, algo:'edge', tol:16, radius:16, radii:{ edge:16, add:14, sub:8 } };
+  const radKey = sign => draw.algo==='edge' ? 'edge' : (sign>0 ? 'add' : 'sub'); // 兩種辨識方式各自記住範圍
   const drawUIs = [];
 
   function persistUserAnn(){
@@ -1917,7 +1927,11 @@
   }
   function restoreAnnotation(){
     const t = trash.pop(); if(!t) return;
-    if(t.item){ const list = userAnn[t.key] = userAnn[t.key] || []; list.splice(t.index, 0, t.item); persistUserAnn(); }
+    if(t.merge){ // 復原合併：拿掉合併後的區塊，放回原本幾塊
+      const list = (userAnn[t.key] || []).filter(x=>x.id!==t.added);
+      t.merge.forEach(r=>list.splice(r.index, 0, r.item));
+      userAnn[t.key] = list; persistUserAnn();
+    } else if(t.item){ const list = userAnn[t.key] = userAnn[t.key] || []; list.splice(t.index, 0, t.item); persistUserAnn(); }
     else { hiddenAnn[t.key] = (hiddenAnn[t.key]||[]).filter(s=>s!==t.sig); persistHidden(); }
     redrawAnn(); updateDrawUI(); showToast('已復原');
   }
@@ -1931,23 +1945,34 @@
   function draftFor(host, key){
     if(draw.host !== host || !draw.mode || draw.key !== key) return [];
     if(draw.mode === 'auto'){
-      return draw.auto ? [{ t:'area', k:'wet', draft:true, label:'辨識範圍（未儲存）', poly:draw.auto, at:annAnchor(draw.auto,'area') }] : [];
+      const marks = draw.seeds.map(s=>({ t:'vertex', color:s.sign>0?'#2fd47a':'#ff4d4f', at:s.pt }));
+      const a = draw.auto;
+      const top = a && a.parts[0].reduce((m,p)=>p[1]>m[1]?p:m); // 草稿標籤放在範圍上緣外側，避免蓋住邊界
+      return (a ? [{ t:'area', k:'wet', draft:true, label:'辨識範圍（未儲存）', poly:a.parts[0], parts:a.parts, holes:a.holes, at:[top[0], top[1]+0.04] }] : []).concat(marks);
     }
     const p = draw.pts, out = [];
-    if(draw.mode === 'area' && p.length >= 3) out.push({ t:'area', k:'other', label:'', poly:p, at:p[0] });
-    else if(p.length >= 2) out.push({ t:'line', k:'other', label:'', pts:p, at:p[0] });
+    if(draw.mode === 'area' && p.length >= 3) out.push({ t:'area', k:'other', draft:true, label:'', poly:p, at:p[p.length-1] });
+    else if(p.length >= 2) out.push({ t:'line', k:'other', draft:true, label:'', pts:p, at:p[p.length-1] });
     p.forEach(v=>out.push({ t:'vertex', k:'other', at:v }));
     return out;
   }
-  function resetDraft(){ draw.pts = []; draw.auto = null; draw.seed = null; }
+  function resetDraft(){ draw.pts = []; draw.auto = null; draw.seeds = []; draw.sign = 1; draw.radius = draw.radii[radKey(1)]; }
 
-  /* ---- 辨識：以點選位置為種子做顏色相似區域擴張 ---- */
+  /* ---- 辨識：沿邊緣切割（預設）或相似顏色擴張 ---- */
   const segCache = new Map();
   function segImage(img, key){
     if(segCache.has(key)) return segCache.get(key);
     const W = 2048, H = 1024;
     const c = document.createElement('canvas'); c.width = W; c.height = H;
-    const x = c.getContext('2d', { willReadFrequently:true }); x.drawImage(img, 0, 0, W, H);
+    const x = c.getContext('2d', { willReadFrequently:true });
+    // 大圖分段對半縮小（等同面積平均）；一次縮到底會產生雜點，邊緣辨識就會跑掉
+    let src = img, sw = img.naturalWidth || img.width;
+    while(sw >= W*4){
+      sw = Math.round(sw/2);
+      const step = document.createElement('canvas'); step.width = sw; step.height = Math.round(sw/2);
+      const sx = step.getContext('2d'); sx.imageSmoothingQuality = 'high'; sx.drawImage(src, 0, 0, step.width, step.height); src = step;
+    }
+    x.imageSmoothingQuality = 'high'; x.drawImage(src, 0, 0, W, H);
     const d = x.getImageData(0, 0, W, H).data;
     const Y = new Float32Array(W*H), Cb = new Float32Array(W*H), Cr = new Float32Array(W*H);
     for(let i=0,j=0;i<W*H;i++,j+=4){
@@ -1973,24 +1998,25 @@
   }
   // 以種子色為基準，找出「顏色相近、沒有跨越明顯邊緣、且在指定半徑內」的相連區域
   // 權重與梯度門檻是用空拍報告的人工圈選範圍調出來的
-  function growRegion(S, lon, lat, tol, radiusDeg){
+  const lonToCol = (lon, W) => ((Math.floor((lon/(2*Math.PI)+0.5)*W) % W) + W) % W;
+  // shift：遮罩座標系的水平位移（x遮罩 = x原圖 − shift），多個點擊共用同一座標系才能加選/扣除
+  function growMask(S, lon, lat, tol, radiusDeg, shift){
     const { W, H, Y, Cb, Cr, G } = S;
-    const su = ((Math.floor((lon/(2*Math.PI)+0.5)*W) % W) + W) % W;
-    const sv = Math.max(0, Math.min(H-1, Math.floor((0.5-lat/Math.PI)*H)));
-    const shift = su - (W>>1);           // 以種子為中心的座標系，避免跨越全景左右接縫
+    const sx0 = (((lonToCol(lon, W) - shift) % W) + W) % W;
+    const sv = Math.max(0, Math.min(H-2, Math.floor((0.5-lat/Math.PI)*H)));
     const minY = (H>>1) + 2;             // 只在地平線以下擴張，避免吃到天空
-    if(sv < minY) return null;
+    if(sv < minY || sx0 < 1 || sx0 > W-2) return null;
     const src = (x,y)=> y*W + (((x+shift)%W)+W)%W;
-    const med = A => { const v=[]; for(let dy=-4;dy<=4;dy++) for(let dx=-4;dx<=4;dx++) v.push(A[src((W>>1)+dx, Math.max(minY, Math.min(H-1, sv+dy)))]); v.sort((a,b)=>a-b); return v[v.length>>1]; };
+    const med = A => { const v=[]; for(let dy=-4;dy<=4;dy++) for(let dx=-4;dx<=4;dx++) v.push(A[src(sx0+dx, Math.max(minY, Math.min(H-1, sv+dy)))]); v.sort((a,b)=>a-b); return v[v.length>>1]; };
     const mY = med(Y), mCb = med(Cb), mCr = med(Cr);
     // 半徑限制（球面角距）
     const lat0 = (0.5-(sv+0.5)/H)*Math.PI, cosR = Math.cos(radiusDeg*Math.PI/180);
-    const cosLon = new Float32Array(W); for(let x=0;x<W;x++) cosLon[x] = Math.cos((x-(W>>1))*2*Math.PI/W);
+    const cosLon = new Float32Array(W); for(let x=0;x<W;x++) cosLon[x] = Math.cos((x-sx0)*2*Math.PI/W);
     const sinRow = new Float32Array(H), cosRow = new Float32Array(H);
     for(let y=0;y<H;y++){ const a=(0.5-(y+0.5)/H)*Math.PI; sinRow[y]=Math.sin(a)*Math.sin(lat0); cosRow[y]=Math.cos(a)*Math.cos(lat0); }
     const mask = new Uint8Array(W*H), stack = new Int32Array(W*H);
     let top = 0;
-    const start = sv*W + (W>>1); mask[start] = 1; stack[top++] = start;
+    const start = sv*W + sx0; mask[start] = 1; stack[top++] = start;
     while(top){
       const p = stack[--top];
       const px = p % W, py = (p / W) | 0;
@@ -2000,49 +2026,41 @@
         const q = ny*W+nx; if(mask[q]) continue;
         if(sinRow[ny] + cosRow[ny]*cosLon[nx] < cosR) continue;
         const i = src(nx,ny);
-        const nearSeed = Math.abs(nx-(W>>1))<=2 && Math.abs(ny-sv)<=2;
+        const nearSeed = Math.abs(nx-sx0)<=2 && Math.abs(ny-sv)<=2;
         // 色度權重高、亮度權重低（容忍陰影與濕度深淺）
         if(!nearSeed && (G[i] > 6 || Math.hypot(0.35*(Y[i]-mY), 3*(Cb[i]-mCb), 3*(Cr[i]-mCr)) > tol)) continue;
         mask[q] = 1; stack[top++] = q;
       }
     }
-    // 閉運算（膨脹再侵蝕）補小縫
-    const morph = (m, dil)=>{
-      const o = new Uint8Array(W*H);
-      for(let y=minY;y<H-1;y++) for(let x=1;x<W-1;x++){
-        const i=y*W+x, a=m[i], b=m[i-1], c=m[i+1], d=m[i-W], e=m[i+W];
-        o[i] = dil ? (a|b|c|d|e) : (a&b&c&d&e);
-      }
-      return o;
-    };
-    let m = morph(morph(morph(morph(mask,true),true),false),false);
-    if(!m[start]) m = mask;
-    // 只保留含種子的連通區
-    const comp = new Uint8Array(W*H); top = 0; comp[start]=1; stack[top++]=start; let size=0;
-    while(top){ const p=stack[--top]; size++;
-      [p-1,p+1,p-W,p+W].forEach(q=>{ if(q>=0 && q<W*H && m[q] && !comp[q]){ comp[q]=1; stack[top++]=q; } });
+    return mask;
+  }
+  // 背景中「碰不到影像邊緣」的像素＝內部的洞
+  function holeMask(m, W, H){
+    const seen = new Uint8Array(W*H), stack = new Int32Array(W*H); let top = 0;
+    const push = i => { if(!m[i] && !seen[i]){ seen[i]=1; stack[top++]=i; } };
+    for(let x=0;x<W;x++){ push(x); push((H-1)*W+x); }
+    for(let y=0;y<H;y++){ push(y*W); push(y*W+W-1); }
+    while(top){ const p = stack[--top], x = p%W;
+      if(x>0) push(p-1); if(x<W-1) push(p+1); if(p>=W) push(p-W); if(p<W*(H-1)) push(p+W);
     }
-    if(size < 30) return null;
-    // Moore 鄰域外框追蹤
+    const out = new Uint8Array(W*H);
+    for(let i=0;i<W*H;i++) out[i] = (!m[i] && !seen[i]) ? 1 : 0;
+    return out;
+  }
+  // 找出遮罩中各個連通區塊並描出外框（yaw·pitch），由大到小
+  function traceRings(m, W, H, shift, limit){
+    const seen = new Uint8Array(W*H), stack = new Int32Array(W*H), comps = [];
+    for(let s=W; s<W*(H-1); s++){
+      if(!m[s] || seen[s]) continue;
+      let top=0, size=0; seen[s]=1; stack[top++]=s;
+      while(top){ const p=stack[--top]; size++;
+        for(const q of [p-1,p+1,p-W,p+W]) if(q>=0 && q<W*H && m[q] && !seen[q]){ seen[q]=1; stack[top++]=q; }
+      }
+      if(size >= 40) comps.push({ start:s, size }); // s 是該區掃描順序第一個像素（最上、最左）
+    }
+    comps.sort((a,b)=>b.size-a.size);
     const DX=[-1,-1,0,1,1,1,0,-1], DY=[0,-1,-1,-1,0,1,1,1];
-    let s = -1; for(let i=minY*W;i<W*H;i++){ if(comp[i]){ s=i; break; } }
-    const sx = s%W, sy = (s/W)|0; let cx=sx, cy=sy, dir=0; const ring=[[sx,sy]];
-    for(let step=0; step<60000; step++){
-      let found=false;
-      for(let i=1;i<=8;i++){
-        const d=(dir+i)%8, nx=cx+DX[d], ny=cy+DY[d];
-        if(nx>=0&&nx<W&&ny>=0&&ny<H&&comp[ny*W+nx]){
-          const pd=(d+7)%8, bx=cx+DX[pd], by=cy+DY[pd];
-          cx=nx; cy=ny;
-          for(let j=0;j<8;j++) if(cx+DX[j]===bx && cy+DY[j]===by){ dir=j; break; }
-          found=true; break;
-        }
-      }
-      if(!found || (cx===sx && cy===sy)) break;
-      ring.push([cx,cy]);
-    }
-    // Douglas-Peucker 簡化，控制頂點數
-    const simplify = (pts, eps)=>{
+    const simplify = (pts, eps)=>{ // Douglas-Peucker
       const keep = new Uint8Array(pts.length); keep[0]=keep[pts.length-1]=1;
       const mid = pts.length>>1; keep[mid]=1;
       const st = [[0,mid],[mid,pts.length-1]];
@@ -2054,22 +2072,217 @@
       }
       return pts.filter((_,i)=>keep[i]);
     };
-    let eps = 1.5, poly = simplify(ring, eps);
-    while(poly.length > 160){ eps *= 1.4; poly = simplify(ring, eps); }
-    if(poly.length < 3) return null;
-    return { poly: poly.map(([x,y])=>{
-      const ux = (((x+shift)%W)+W)%W;
-      return [ +(((ux+0.5)/W-0.5)*2*Math.PI).toFixed(5), +((0.5-(y+0.5)/H)*Math.PI).toFixed(5) ];
-    }) };
+    return comps.slice(0,limit).map(c=>{ // Moore 鄰域外框追蹤
+      const sx = c.start%W, sy = (c.start/W)|0; let cx=sx, cy=sy, dir=0; const ring=[[sx,sy]];
+      for(let step=0; step<60000; step++){
+        let found=false;
+        for(let i=1;i<=8;i++){
+          const d=(dir+i)%8, nx=cx+DX[d], ny=cy+DY[d];
+          if(nx>=0&&nx<W&&ny>=0&&ny<H&&m[ny*W+nx]){
+            const pd=(d+7)%8, bx=cx+DX[pd], by=cy+DY[pd];
+            cx=nx; cy=ny;
+            for(let j=0;j<8;j++) if(cx+DX[j]===bx && cy+DY[j]===by){ dir=j; break; }
+            found=true; break;
+          }
+        }
+        if(!found || (cx===sx && cy===sy)) break;
+        ring.push([cx,cy]);
+      }
+      let eps = 1.2, poly = simplify(ring, eps);
+      while(poly.length > 200){ eps *= 1.4; poly = simplify(ring, eps); }
+      return poly.map(([x,y])=>{
+        const ux = (((x+shift)%W)+W)%W;
+        return [ +(((ux+0.5)/W-0.5)*2*Math.PI).toFixed(5), +((0.5-(y+0.5)/H)*Math.PI).toFixed(5) ];
+      });
+    }).filter(p=>p.length>=3);
+  }
+  // 遮罩 → { parts:外框們, holes:內洞們 }
+  function maskToRings(mask, W, H, shift){
+    const morph = (m, dil)=>{
+      const o = new Uint8Array(W*H);
+      for(let y=1;y<H-1;y++) for(let x=1;x<W-1;x++){
+        const i=y*W+x, a=m[i], b=m[i-1], c=m[i+1], d=m[i-W], e=m[i+W];
+        o[i] = dil ? (a|b|c|d|e) : (a&b&c&d&e);
+      }
+      return o;
+    };
+    const m = morph(morph(morph(morph(mask,true),true),false),false);
+    const parts = traceRings(m, W, H, shift, 12);
+    return { parts, holes: parts.length ? traceRings(holeMask(m, W, H), W, H, shift, 20) : [] };
+  }
+  // 沿邊緣切割（標記式分水嶺）：加選點＝目標、扣除點與搜尋圈外＝背景，
+  // 兩邊由顏色變化小的像素開始擴張，在顏色變化最明顯處相遇，邊界因此貼著水岸／地物邊緣
+  function edgeMask(S, seeds, shift){
+    const { W, H, Y, Cb, Cr } = S, minY = (H>>1) + 2;
+    const lab = new Uint8Array(W*H).fill(1); // 0 未定、1 背景、2 目標、3 交界、4 排隊中
+    const marks = seeds.map(s=>({ sign:s.sign, r:s.radius*W/360,
+      x:(((lonToCol(s.pt[0], W) - shift) % W) + W) % W, y:Math.floor((0.5-s.pt[1]/Math.PI)*H) }));
+    const disc = (cx, cy, r, v)=>{
+      for(let y=Math.max(minY, Math.ceil(cy-r)); y<=Math.min(H-2, Math.floor(cy+r)); y++){
+        const half = Math.floor(Math.sqrt(r*r - (y-cy)*(y-cy)));
+        for(let x=Math.max(1, cx-half); x<=Math.min(W-2, cx+half); x++) lab[y*W+x] = v;
+      }
+    };
+    marks.filter(m=>m.sign>0).forEach(m=>disc(m.x, m.y, m.r, 0));
+    marks.forEach(m=>disc(m.x, m.y, 5, m.sign>0 ? 2 : 1));
+    const src = i => { const x = i % W; return i - x + (((x+shift) % W) + W) % W; }; // 平移座標 → 原圖像素
+    const diff = (i,j)=>{ const a = src(i), b = src(j); return Math.min(255, Math.round(Math.max(Math.abs(Y[a]-Y[b]), 3*Math.abs(Cb[a]-Cb[b]), 3*Math.abs(Cr[a]-Cr[b])))); };
+    const queue = Array.from({length:256}, ()=>[]), head = new Int32Array(256);
+    for(let i=W; i<W*(H-1); i++){
+      if(lab[i]) continue;
+      let best = 256;
+      for(const q of [i-1,i+1,i-W,i+W]) if(lab[q]===1 || lab[q]===2) best = Math.min(best, diff(i,q));
+      if(best < 256){ queue[best].push(i); lab[i] = 4; }
+    }
+    let cur = 0;
+    while(cur < 256){
+      if(head[cur] >= queue[cur].length){ cur++; continue; }
+      const p = queue[cur][head[cur]++], n = [p-1,p+1,p-W,p+W];
+      let bg = false, fg = false;
+      for(const q of n){ if(lab[q]===1) bg = true; else if(lab[q]===2) fg = true; }
+      if(bg && fg){ lab[p] = 3; continue; }
+      lab[p] = fg ? 2 : 1;
+      for(const q of n) if(lab[q]===0){ const d = diff(p,q); queue[d].push(q); lab[q] = 4; if(d < cur) cur = d; }
+    }
+    const out = new Uint8Array(W*H);
+    for(let i=0;i<W*H;i++) out[i] = lab[i]===2 ? 1 : 0;
+    return out;
+  }
+  // 沿邊緣：所有點一起切割；相似顏色：依序套用，加選併入、扣除挖掉
+  function recognise(S, seeds){
+    const { W, H } = S, shift = lonToCol(seeds[0].pt[0], W) - (W>>1);
+    if(draw.algo === 'edge') return maskToRings(edgeMask(S, seeds, shift), W, H, shift);
+    const out = new Uint8Array(W*H);
+    seeds.forEach(s=>{
+      const sig = [shift, s.tol, s.radius, S.key].join('|');
+      if(!s.cache || s.cache.sig !== sig){
+        const m = growMask(S, s.pt[0], s.pt[1], s.tol, s.radius, shift);
+        if(m){ const h = holeMask(m, W, H); for(let i=0;i<m.length;i++) m[i] |= h[i]; } // 區塊內的零星紋理視為同一塊
+        s.cache = { sig, m };
+      }
+      const m = s.cache.m; if(!m) return;
+      if(s.sign > 0){ for(let i=0;i<m.length;i++) out[i] |= m[i]; }
+      else {
+        // 扣除範圍稍微外擴，避免挖完留下一圈細邊
+        for(let y=1;y<H-1;y++) for(let x=1;x<W-1;x++){ const i=y*W+x; if(m[i]|m[i-1]|m[i+1]|m[i-W]|m[i+W]) out[i]=0; }
+      }
+    });
+    return maskToRings(out, W, H, shift);
   }
   function runAuto(){
-    if(!draw.seed || !draw.engine.state.img) return;
+    if(!draw.seeds.length || !draw.engine.state.img){ draw.auto = null; redrawAnn(); updateDrawUI(); return; }
     let res = null;
-    try{ res = growRegion(segImage(draw.engine.state.img, draw.key), draw.seed[0], draw.seed[1], draw.tol, draw.radius); }
-    catch(e){ showToast('此影像無法進行辨識'); return; }
-    draw.auto = res ? res.poly : null;
-    if(!res) showToast('找不到範圍，請點選地平線以下的地面，或調高容許度');
+    try{ res = recognise(Object.assign({ key:draw.key }, segImage(draw.engine.state.img, draw.key)), draw.seeds); }
+    catch(e){ console.error(e); showToast('此影像無法進行辨識'); return; }
+    draw.auto = res.parts.length ? res : null;
+    if(!draw.auto) showToast('找不到範圍，請點選地平線以下的地面，或調高容許度');
     redrawAnn(); updateDrawUI();
+  }
+
+  /* ---- 合併多個區塊 ---- */
+  function mergeAreas(key, ids){
+    const list = userAnn[key] || [], picked = list.filter(x=>ids.includes(x.id) && x.t==='area');
+    if(picked.length < 2){ showToast('請至少勾選 2 個面'); return; }
+    const W = 2048, H = 1024, shift = lonToCol(picked[0].at[0], W) - (W>>1);
+    const c = document.createElement('canvas'); c.width = W; c.height = H;
+    const g = c.getContext('2d', { willReadFrequently:true }); g.fillStyle = '#fff';
+    picked.forEach(it=>{
+      g.beginPath(); // 同一塊的外框與內洞放在同一路徑，用 evenodd 保留洞；不同塊之間取聯集
+      allRings(it).forEach(poly=>{
+        let pts = []; for(let i=0;i<poly.length;i++) pts = pts.concat(annDensify(poly[i], poly[(i+1)%poly.length]));
+        let prev = null;
+        const xy = pts.map(p=>{
+          let x = (p[0]/(2*Math.PI)+0.5)*W - shift; x = ((x%W)+W)%W;
+          if(prev !== null){ while(x - prev > W/2) x -= W; while(prev - x > W/2) x += W; }
+          prev = x; return [x, (0.5-p[1]/Math.PI)*H];
+        });
+        [-W,0,W].forEach(dx=>{ xy.forEach((p,i)=> i ? g.lineTo(p[0]+dx,p[1]) : g.moveTo(p[0]+dx,p[1])); g.closePath(); });
+      });
+      g.fill('evenodd');
+    });
+    const d = g.getImageData(0,0,W,H).data, mask = new Uint8Array(W*H);
+    for(let i=0;i<W*H;i++) mask[i] = d[i*4+3] > 127 ? 1 : 0;
+    const { parts, holes } = maskToRings(mask, W, H, shift);
+    if(!parts.length){ showToast('合併失敗'); return; }
+    askName({ name:picked[0].label, kind:picked[0].k }, (label, k)=>{
+      const cur = userAnn[key] || [];
+      const removed = picked.map(item=>({ item, index:cur.indexOf(item) })).sort((a,b)=>a.index-b.index);
+      const it = { id:newAnnId(), t:'area', k, label, user:true, method:picked.every(x=>x.method==='auto')?'auto':'manual', created:new Date().toISOString(), poly:parts[0], at:annAnchor(parts[0],'area') };
+      if(parts.length > 1) it.parts = parts;
+      if(holes.length) it.holes = holes;
+      const rest = cur.filter(x=>!picked.includes(x)); rest.push(it); userAnn[key] = rest;
+      trash.push({ key, merge:removed, added:it.id }); drawUIs.forEach(r=>r.picked.clear());
+      persistUserAnn(); redrawAnn(); updateDrawUI(); showToast('已合併 '+removed.length+' 塊為「'+label+'」'+(parts.length>1?'（'+parts.length+' 個不相連部分）':''));
+    });
+  }
+  function newAnnId(){ return 'u-'+Date.now().toString(36)+Math.random().toString(36).slice(2,6); }
+
+  /* ---- 面積／長度概估：假設地面平坦，由拍攝高度把全景角度投影到地面 ---- */
+  const SCALE_KEY = 'panoScale';
+  let scaleCfg = { byKey:{}, all:null };
+  try{ const v = JSON.parse(localStorage.getItem(SCALE_KEY)||'null'); if(v && typeof v==='object') scaleCfg = { byKey:v.byKey||{}, all:v.all||null }; }catch(e){}
+  function persistScale(){ try{ localStorage.setItem(SCALE_KEY, JSON.stringify(scaleCfg)); }catch(e){} }
+  const heightOf = key => scaleCfg.byKey[key] || scaleCfg.all || null;
+  function groundPts(pts, closed){
+    let all = []; const n = closed ? pts.length : pts.length-1;
+    for(let i=0;i<n;i++) all = all.concat(annDensify(pts[i], pts[(i+1)%pts.length]));
+    if(!closed) all.push(pts[pts.length-1]);
+    return all.map(p=>{ const d = 1/Math.tan(Math.max(-p[1], 0.0035)); return [d*Math.sin(p[0]), d*Math.cos(p[0])]; });
+  }
+  function ringUnit(ring){
+    const g = groundPts(ring, true); let a = 0;
+    for(let i=0;i<g.length;i++){ const p=g[i], q=g[(i+1)%g.length]; a += p[0]*q[1]-q[0]*p[1]; }
+    return Math.abs(a)/2;
+  }
+  function areaUnit(it){ // 拍攝高度 1 公尺時的面積（外框相加、內洞扣除）
+    const sum = rings => rings.reduce((n,r)=>n+ringUnit(r), 0);
+    return Math.max(0, sum(outerRings(it)) - sum(it.holes || []));
+  }
+  function lengthUnit(it){ const g = groundPts(it.pts, false); let L=0; for(let i=1;i<g.length;i++) L += Math.hypot(g[i][0]-g[i-1][0], g[i][1]-g[i-1][1]); return L; }
+  const minDepDeg = it => Math.min(...(it.t==='line' ? it.pts : outerRings(it).flat()).map(p=>-p[1]))*180/Math.PI;
+  const fmtArea = m2 => m2 < 1000 ? Math.round(m2)+' m²' : (m2/10000).toFixed(m2<100000?2:1)+' 公頃';
+  function measureText(it, key){
+    const h = heightOf(key); if(!h || it.t==='point') return '';
+    if(minDepDeg(it) <= 0.3) return '貼近地平線，無法估算';
+    if(it.t==='line') return '長約 '+Math.round(lengthUnit(it)*h)+' m';
+    return '約 '+fmtArea(areaUnit(it)*h*h) + (minDepDeg(it) < 5 ? '（含遠處，誤差大）' : '');
+  }
+  let scaleModal = null;
+  function openScaleModal(key){
+    if(!scaleModal){
+      scaleModal = document.createElement('div'); scaleModal.className = 'modal-overlay';
+      document.body.appendChild(scaleModal);
+      scaleModal.addEventListener('click', e=>{ if(e.target===scaleModal) scaleModal.classList.remove('show'); });
+    }
+    const list = userAnn[key] || [], lines = list.filter(i=>i.t==='line'), areas = list.filter(i=>i.t==='area');
+    const opt = a => a.map(i=>`<option value="${escapeHtml(i.id)}">${escapeHtml(i.label)}</option>`).join('');
+    scaleModal.innerHTML = `<div class="modal"><p class="modal-title">面積估算比例</p>
+      <p class="modal-sub">選一種提供比例的方式。結果是假設地面平坦的概估值。</p>
+      <label class="priv-row"><input type="radio" name="sc" value="height" checked> 拍攝高度（無人機離地公尺數，最直接）</label>
+      <input class="field-input" id="sc-h" inputmode="decimal" placeholder="例：100">
+      <label class="priv-row"><input type="radio" name="sc" value="line" ${lines.length?'':'disabled'}> 一段已知實際長度的線${lines.length?'':'（請先畫一條線）'}</label>
+      <div class="field-row"><select class="field-input" id="sc-line">${opt(lines)}</select><input class="field-input" id="sc-len" inputmode="decimal" placeholder="實際長度（公尺）"></div>
+      <label class="priv-row"><input type="radio" name="sc" value="area" ${areas.length?'':'disabled'}> 一塊已知實際面積的範圍${areas.length?'':'（請先畫一個面）'}</label>
+      <div class="field-row"><select class="field-input" id="sc-area">${opt(areas)}</select><input class="field-input" id="sc-ha" inputmode="decimal" placeholder="實際面積（公頃）"></div>
+      <label class="priv-row"><input type="checkbox" id="sc-all"> 也套用到其他全景（拍攝高度相同時）</label>
+      <div class="modal-actions"><button class="btn btn-ghost" data-a="clear">清除比例</button><button class="btn btn-ghost" data-a="no">取消</button><button class="btn btn-primary" data-a="ok" style="flex:none; padding:8px 18px;">套用</button></div></div>`;
+    const q = s => scaleModal.querySelector(s);
+    if(heightOf(key)) q('#sc-h').value = Math.round(heightOf(key)*10)/10;
+    [['#sc-len','line'],['#sc-ha','area'],['#sc-h','height']].forEach(([s,v])=>q(s).addEventListener('focus', ()=>{ const r=q(`input[value="${v}"]`); if(!r.disabled) r.checked = true; }));
+    q('.modal').addEventListener('click', e=>{
+      const a = e.target.dataset.a; if(!a) return;
+      if(a==='no'){ scaleModal.classList.remove('show'); return; }
+      if(a==='clear'){ delete scaleCfg.byKey[key]; scaleCfg.all = null; persistScale(); scaleModal.classList.remove('show'); redrawAnn(); updateDrawUI(); return; }
+      const how = q('input[name="sc"]:checked').value; let h = NaN;
+      if(how==='height') h = parseFloat(q('#sc-h').value);
+      else if(how==='line'){ const it = lines.find(i=>i.id===q('#sc-line').value), L = parseFloat(q('#sc-len').value); if(it && L>0 && minDepDeg(it)>0.3) h = L / lengthUnit(it); }
+      else { const it = areas.find(i=>i.id===q('#sc-area').value), ha = parseFloat(q('#sc-ha').value); if(it && ha>0 && minDepDeg(it)>0.3) h = Math.sqrt(ha*10000 / areaUnit(it)); }
+      if(!(h > 0 && h < 100000)){ showToast('請輸入大於 0 的數值（參考線/面需在地平線以下）'); return; }
+      scaleCfg.byKey[key] = h; if(q('#sc-all').checked) scaleCfg.all = h;
+      persistScale(); scaleModal.classList.remove('show'); redrawAnn(); updateDrawUI();
+      showToast('拍攝高度約 '+h.toFixed(0)+' 公尺'+((h<20||h>500)?'，數值不尋常，請確認比例':''));
+    });
+    scaleModal.classList.add('show');
   }
 
   /* ---- 命名視窗 ---- */
@@ -2101,18 +2314,19 @@
     const n = (userAnn[key]||[]).filter(i=>i.k===kind).length + 1;
     return kindName(kind) + ' ' + n;
   }
-  function saveItem(type, pts, method, defKind){
+  function saveItem(type, pts, method, defKind, extra){
     const key = draw.key;
     askName({ name: nextName(key, defKind), kind: defKind }, (label, k)=>{
       const it = { id:'u-'+Date.now().toString(36)+Math.random().toString(36).slice(2,6), t:type, k, label, user:true, method, created:new Date().toISOString() };
       if(type==='point') it.at = pts[0];
       else { it[type==='area'?'poly':'pts'] = pts; it.at = annAnchor(pts, type); }
+      if(extra){ if(extra.parts.length > 1) it.parts = extra.parts; if(extra.holes.length) it.holes = extra.holes; }
       (userAnn[key] = userAnn[key] || []).push(it);
       persistUserAnn(); resetDraft(); redrawAnn(); updateDrawUI(); showToast('已儲存「'+label+'」');
     });
   }
   function finishDraft(){
-    if(draw.mode==='auto'){ if(draw.auto) saveItem('area', draw.auto, 'auto', 'wet'); else showToast('請先點選要辨識的地面'); return; }
+    if(draw.mode==='auto'){ if(draw.auto) saveItem('area', draw.auto.parts[0], 'auto', 'wet', draw.auto); else showToast('請先點選要辨識的地面'); return; }
     if(draw.mode==='line'){ if(draw.pts.length>=2) saveItem('line', draw.pts.slice(), 'manual', 'mark'); else showToast('線至少需要 2 個點'); return; }
     if(draw.mode==='area'){ if(draw.pts.length>=3) saveItem('area', draw.pts.slice(), 'manual', 'wet'); else showToast('面至少需要 3 個點'); }
   }
@@ -2125,16 +2339,21 @@
   function countUser(){ return Object.values(userAnn).reduce((n,a)=>n+a.length, 0); }
   function exportAnnJson(){
     if(!countUser()){ showToast('目前沒有自行標註的資料'); return; }
-    downloadText('環景標註-'+new Date().toISOString().slice(0,10)+'.json', JSON.stringify({version:1, items:userAnn}, null, 1), 'application/json');
+    downloadText('環景標註-'+new Date().toISOString().slice(0,10)+'.json', JSON.stringify({version:1, items:userAnn, scale:scaleCfg}, null, 1), 'application/json');
   }
   function exportAnnCsv(){
     if(!countUser()){ showToast('目前沒有自行標註的資料'); return; }
     const deg = v => (v*180/Math.PI).toFixed(2);
-    const q = v => { let s = String(v==null?'':v); if(/^[=+\-@]/.test(s) && isNaN(Number(s))) s = "'"+s; return '"'+s.replace(/"/g,'""')+'"'; };
-    const rows = [['全景ID','類型','類別','名稱','方式','中心yaw(度)','中心pitch(度)','頂點(yaw pitch;…)','建立時間']];
+    // 防試算表公式注入；純座標字串（負號開頭）不加引號前綴
+    const q = v => { let s = String(v==null?'':v); if(/^[=+\-@]/.test(s) && isNaN(Number(s)) && !/^-\d[\d.\- ;|:扣除]*$/.test(s)) s = "'"+s; return '"'+s.replace(/"/g,'""')+'"'; };
+    const rows = [['全景ID','類型','類別','名稱','方式','概估面積(公頃)','概估長度(m)','採用拍攝高度(m)','估算備註','中心yaw(度)','中心pitch(度)','頂點(yaw pitch;… 多塊以 | 分隔)','建立時間']];
+    const ring = v => v.map(p=>deg(p[0])+' '+deg(p[1])).join(';');
     Object.entries(userAnn).forEach(([key, list])=>list.forEach(it=>{
-      const v = it.poly || it.pts || [it.at];
-      rows.push([key, TYPE_NAME[it.t], kindName(it.k), it.label, it.method==='auto'?'辨識':'手繪', deg(it.at[0]), deg(it.at[1]), v.map(p=>deg(p[0])+' '+deg(p[1])).join(';'), it.created||'']);
+      const v = it.t==='area' ? outerRings(it).map(ring).concat((it.holes||[]).map(h=>'扣除:'+ring(h))).join(' | ') : ring(it.pts || [it.at]);
+      const h = heightOf(key), dep = it.t==='point' ? null : minDepDeg(it), ok = !!h && it.t!=='point' && dep > 0.3;
+      rows.push([key, TYPE_NAME[it.t], kindName(it.k), it.label, it.method==='auto'?'辨識':'手繪',
+        ok && it.t==='area' ? (areaUnit(it)*h*h/10000).toFixed(4) : '', ok && it.t==='line' ? (lengthUnit(it)*h).toFixed(1) : '', ok ? h.toFixed(1) : '',
+        ok ? (dep < 5 ? '平地假設概估；含遠處，誤差大' : '平地假設概估') : '', deg(it.at[0]), deg(it.at[1]), v, it.created||'']);
     }));
     downloadText('環景標註-'+new Date().toISOString().slice(0,10)+'.csv', '﻿'+rows.map(r=>r.map(q).join(',')).join('\r\n'), 'text/csv;charset=utf-8');
   }
@@ -2144,6 +2363,7 @@
       try{
         const data = JSON.parse(reader.result); let n = 0;
         const num = p => Array.isArray(p) && p.length===2 && p.every(Number.isFinite);
+        const rings = a => Array.isArray(a) && a.length<=40 && a.every(r=>Array.isArray(r) && r.length>=3 && r.every(num));
         Object.entries(data.items||{}).forEach(([key, list])=>{
           if(!/^[\w-]{1,60}$/.test(key) || !Array.isArray(list)) return;
           list.forEach(it=>{
@@ -2153,10 +2373,15 @@
             const cur = userAnn[key] = userAnn[key] || [];
             const clean = { id:String(it.id||('u-'+Math.random().toString(36).slice(2))), t:it.t, k:String(it.k||'other'), label:String(it.label||'').slice(0,60), at:it.at, user:true, method:it.method==='auto'?'auto':'manual', created:String(it.created||'') };
             if(it.t==='area') clean.poly = it.poly; if(it.t==='line') clean.pts = it.pts;
+            if(it.t==='area' && it.parts && it.parts.length && rings(it.parts)) clean.parts = it.parts;
+            if(it.t==='area' && it.holes && rings(it.holes)) clean.holes = it.holes;
             const i = cur.findIndex(x=>x.id===clean.id); if(i>=0) cur[i] = clean; else cur.push(clean); n++;
           });
         });
-        persistUserAnn(); redrawAnn(); updateDrawUI(); showToast('已匯入 '+n+' 筆標註');
+        const okH = h => Number.isFinite(h) && h>0 && h<100000;
+        Object.entries((data.scale||{}).byKey||{}).forEach(([key,h])=>{ if(/^[\w-]{1,60}$/.test(key) && okH(h)) scaleCfg.byKey[key] = h; });
+        if(data.scale && okH(data.scale.all)) scaleCfg.all = data.scale.all;
+        persistScale(); persistUserAnn(); redrawAnn(); updateDrawUI(); showToast('已匯入 '+n+' 筆標註');
       }catch(e){ showToast('匯入失敗：檔案格式不正確'); }
     };
     reader.readAsText(file);
@@ -2168,6 +2393,8 @@
     ui.innerHTML = `
       <div class="draw-list" hidden></div>
       <div class="draw-hint" hidden><span class="draw-hint-text"></span>
+        <span class="draw-algo draw-sign" hidden>方式<button type="button" data-act="edge" title="邊界貼著水岸、地物邊緣">沿邊緣</button><button type="button" data-act="color" title="大片顏色均勻的區域">相似顏色</button></span>
+        <span class="draw-addsub draw-sign" hidden><button type="button" data-act="add">＋加選</button><button type="button" data-act="sub">－扣除</button></span>
         <label class="draw-tol" hidden>容許度 <input type="range" data-k="tol" min="6" max="46" step="2"><b></b></label>
         <label class="draw-tol" hidden>範圍 <input type="range" data-k="radius" min="6" max="70" step="2"><b></b></label></div>
       <div class="draw-bar">
@@ -2175,13 +2402,13 @@
         <span class="draw-tools" hidden>
           <button type="button" data-mode="point">點</button><button type="button" data-mode="line">線</button><button type="button" data-mode="area">面</button><button type="button" data-mode="auto">辨識裸露地</button>
           <button type="button" data-mode="erase">刪除</button><button type="button" data-act="restore">復原刪除</button>
-          <button type="button" data-act="finish">完成</button><button type="button" data-act="undo">退一點</button><button type="button" data-act="list">清單</button><button type="button" data-act="close">關閉</button>
+          <button type="button" data-act="finish">完成</button><button type="button" data-act="undo">退一點</button><button type="button" data-act="list">清單／合併</button><button type="button" data-act="scale">面積比例</button><button type="button" data-act="close">關閉</button>
         </span>
       </div>
       <input type="file" class="draw-file" accept=".json,application/json" tabindex="-1" aria-hidden="true">`;
     host.appendChild(ui);
     ['mousedown','touchstart','click','dblclick','wheel','pointerdown','pointerup'].forEach(ev=>ui.addEventListener(ev, e=>e.stopPropagation(), {passive:true}));
-    const rec = { host, engine, getKey, ui, open:false, list:false };
+    const rec = { host, engine, getKey, ui, open:false, list:false, picked:new Set() };
     drawUIs.push(rec);
     const activate = mode=>{
       Object.assign(draw, { host, engine, getKey, mode, key:getKey() }); resetDraft(); redrawAnn(); updateDrawUI();
@@ -2193,7 +2420,22 @@
       if(a==='toggle'){ rec.open = true; activate(null); }
       else if(a==='close'){ rec.open = false; rec.list = false; Object.assign(draw, {mode:null, host:null}); resetDraft(); redrawAnn(); updateDrawUI(); }
       else if(a==='finish') finishDraft();
-      else if(a==='undo'){ if(draw.mode==='auto'){ resetDraft(); } else draw.pts.pop(); redrawAnn(); updateDrawUI(); }
+      else if(a==='undo'){
+        if(draw.mode==='auto'){
+          draw.seeds.pop(); const last = draw.seeds[draw.seeds.length-1];
+          if(last){ draw.tol = last.tol; if(last.sign === draw.sign) draw.radius = last.radius; }
+          else { draw.sign = 1; draw.radius = draw.radii[radKey(1)]; }
+          runAuto();
+        } else { draw.pts.pop(); redrawAnn(); updateDrawUI(); }
+      }
+      else if(a==='add' || a==='sub'){ draw.sign = a==='add' ? 1 : -1; draw.radius = draw.radii[radKey(draw.sign)]; updateDrawUI(); }
+      else if(a==='edge' || a==='color'){
+        draw.algo = a; draw.radius = draw.radii[radKey(draw.sign)];
+        draw.seeds.forEach(s=>{ s.radius = draw.radii[radKey(s.sign)]; });
+        runAuto();
+      }
+      else if(a==='scale'){ if(getKey()) openScaleModal(getKey()); else showToast('請先載入一張全景'); }
+      else if(a==='merge') mergeAreas(getKey(), [...rec.picked]);
       else if(a==='list'){ rec.list = !rec.list; updateDrawUI(); }
       else if(a==='json') exportAnnJson();
       else if(a==='csv') exportAnnCsv();
@@ -2209,8 +2451,19 @@
       }
     });
     ui.querySelector('.draw-file').addEventListener('change', e=>{ if(e.target.files[0]) importAnn(e.target.files[0]); e.target.value=''; });
+    ui.addEventListener('change', e=>{
+      const id = e.target.dataset.pick; if(!id) return;
+      if(e.target.checked) rec.picked.add(id); else rec.picked.delete(id);
+      updateDrawUI();
+    });
     ui.querySelectorAll('input[type=range]').forEach(el=>el.addEventListener('input', ()=>{
       draw[el.dataset.k] = Number(el.value); el.nextElementSibling.textContent = el.value + (el.dataset.k==='radius'?'°':'');
+      if(el.dataset.k==='radius') draw.radii[radKey(draw.sign)] = draw.radius;
+      const last = draw.seeds[draw.seeds.length-1];
+      if(!last) return;
+      if(draw.algo==='edge') draw.seeds.forEach(s=>{ if(s.sign>0) s.radius = draw.radius; }); // 搜尋圈套用到所有加選點
+      else if(last.sign !== draw.sign) return;     // 剛切換加選/扣除時，滑桿只影響下一次點擊
+      else last[el.dataset.k] = draw[el.dataset.k];  // 否則直接調整最後一次點擊
       clearTimeout(rec.timer); rec.timer = setTimeout(runAuto, 150);
     }));
     // 點擊（非拖曳）才新增節點；拖曳仍然是旋轉視角
@@ -2231,7 +2484,11 @@
       if(draw.key !== key){ draw.key = key; resetDraft(); }
       const q = engine.screenToYawPitch(x, y), pt = [ +q.yaw.toFixed(5), +q.pitch.toFixed(5) ];
       if(draw.mode==='point') saveItem('point', [pt], 'manual', 'mark');
-      else if(draw.mode==='auto'){ draw.seed = pt; runAuto(); }
+      else if(draw.mode==='auto'){
+        if(pt[1] > -0.015){ showToast('請點選地平線以下的地面'); return; }
+        if(draw.sign < 0 && !draw.seeds.length){ showToast('請先加選一塊範圍，再扣除'); return; }
+        draw.seeds.push({ pt, sign:draw.sign, tol:draw.tol, radius:draw.radius }); runAuto();
+      }
       else { draw.pts.push(pt); redrawAnn(); updateDrawUI(); }
     });
     updateDrawUI();
@@ -2246,28 +2503,41 @@
       ui.querySelector('.draw-tools').hidden = !r.open;
       ui.querySelectorAll('[data-mode]').forEach(b=>b.classList.toggle('on', b.dataset.mode===mode));
       ui.querySelector('[data-act="finish"]').hidden = !(mode==='line' || mode==='area' || (mode==='auto' && draw.auto));
-      ui.querySelector('[data-act="undo"]').hidden = !((mode==='line'||mode==='area') ? draw.pts.length : (mode==='auto' && draw.auto));
+      ui.querySelector('[data-act="undo"]').hidden = !((mode==='line'||mode==='area') ? draw.pts.length : (mode==='auto' && draw.seeds.length));
+      ui.querySelector('.draw-algo').hidden = mode!=='auto';
+      ui.querySelector('[data-act="edge"]').classList.toggle('on', draw.algo==='edge');
+      ui.querySelector('[data-act="color"]').classList.toggle('on', draw.algo==='color');
+      ui.querySelector('.draw-addsub').hidden = !(mode==='auto' && draw.seeds.length);
+      ui.querySelector('[data-act="add"]').classList.toggle('on', draw.sign>0);
+      ui.querySelector('[data-act="sub"]').classList.toggle('on', draw.sign<0);
       const hint = ui.querySelector('.draw-hint');
       hint.hidden = !(r.open && mode);
-      const texts = { erase:'點畫面上要刪除的標籤（報告標示只在這台裝置隱藏）', point:'點一下畫面放置一個點', line:'依序點選線上的點（已 '+draw.pts.length+' 點），按「完成」', area:'依序點選範圍的角點（已 '+draw.pts.length+' 點），按「完成」', auto: draw.auto ? '範圍不理想可調整容許度；沒問題按「完成」命名' : '點一下要辨識的裸露地（地平線以下）' };
+      const texts = { erase:'點畫面上要刪除的標籤（報告標示只在這台裝置隱藏）', point:'點一下畫面放置一個點', line:'依序點選線上的點（已 '+draw.pts.length+' 點），按「完成」', area:'依序點選範圍的角點（已 '+draw.pts.length+' 點），按「完成」', auto: draw.seeds.length ? '加選補漏、扣除去多（'+draw.seeds.length+' 點）' : '點一下要辨識範圍的內部（地平線以下）' };
       ui.querySelector('.draw-hint-text').textContent = texts[mode] || '';
       ui.querySelectorAll('.draw-tol').forEach(l=>{
-        l.hidden = mode!=='auto';
         const el = l.querySelector('input'); el.value = draw[el.dataset.k];
+        l.hidden = mode!=='auto' || (draw.algo==='edge' && (el.dataset.k==='tol' || draw.sign<0));
         l.querySelector('b').textContent = draw[el.dataset.k] + (el.dataset.k==='radius'?'°':'');
       });
       const box = ui.querySelector('.draw-list'); box.hidden = !(r.open && r.list);
       if(!box.hidden){
         const list = userAnn[r.getKey()] || [];
+        [...r.picked].forEach(id=>{ if(!list.some(x=>x.id===id)) r.picked.delete(id); });
+        const h = heightOf(r.getKey()), sel = list.filter(x=>r.picked.has(x.id));
+        const total = h && sel.length && sel.every(x=>minDepDeg(x) > 0.3) ? '勾選合計約 '+fmtArea(sel.reduce((n,x)=>n+areaUnit(x),0)*h*h)+'（重疊處重複計算，合併後較準）' : '';
+        const nAreas = list.filter(x=>x.t==='area').length;
         const attr = s => escapeHtml(s).replace(/"/g,'&quot;'); // 名稱可能來自匯入檔，屬性值要跳脫引號
         box.innerHTML = `<p class="draw-list-h">本張全景的標註（${list.length}）</p>`
-          + (list.length ? list.map(it=>`<div class="draw-row"><i style="background:${ANN_COLOR[it.k]||'#fff'}"></i><span title="${attr(it.label)}">${escapeHtml(it.label)}<small>${TYPE_NAME[it.t]}・${escapeHtml(kindName(it.k))}</small></span><button type="button" data-act="go" data-id="${attr(it.id)}">看</button><button type="button" data-act="edit" data-id="${attr(it.id)}">改</button><button type="button" data-act="del" data-id="${attr(it.id)}">刪</button></div>`).join('') : '<p class="draw-empty">尚無標註</p>')
+          + (list.length ? list.map(it=>`<div class="draw-row">${it.t==='area' ? `<input type="checkbox" title="勾選以合併" data-pick="${attr(it.id)}" ${r.picked.has(it.id)?'checked':''}>` : '<b></b>'}<i style="background:${ANN_COLOR[it.k]||'#fff'}"></i><span title="${attr(it.label)}">${escapeHtml(it.label)}<small>${escapeHtml([TYPE_NAME[it.t], kindName(it.k), measureText(it, r.getKey())].filter(Boolean).join('・'))}</small></span><button type="button" data-act="go" data-id="${attr(it.id)}">看</button><button type="button" data-act="edit" data-id="${attr(it.id)}">改</button><button type="button" data-act="del" data-id="${attr(it.id)}">刪</button></div>`).join('') : '<p class="draw-empty">尚無標註</p>')
+          + (nAreas > 1 ? `<div class="draw-io"><button type="button" data-act="merge" ${sel.length<2?'disabled':''}>合併勾選的 ${sel.length} 塊</button></div>` : '')
+          + (total ? `<p class="draw-note">${total}</p>` : '')
+          + (!h && list.some(x=>x.t!=='point') ? '<p class="draw-note">按「面積比例」提供拍攝高度或已知長度／面積，即可顯示概估值。</p>' : '')
           + (()=>{
               const key = r.getKey(), src = ((annotationsData[key]||{}).items||[]);
               const shown = src.filter(i=>!isHidden(key,i)), n = src.length - shown.length;
               if(!src.length) return '';
               return `<p class="draw-list-h" style="margin-top:10px">網站原有標示（${shown.length}）</p>`
-                + shown.map(it=>`<div class="draw-row"><i style="background:${ANN_COLOR[it.k]||'#fff'}"></i><span title="${attr(it.label)}">${escapeHtml(it.label)}<small>${TYPE_NAME[it.t]}・報告</small></span><button type="button" data-act="go" data-id="${attr(annSig(it))}">看</button><span></span><button type="button" data-act="del" data-id="${attr(annSig(it))}">刪</button></div>`).join('')
+                + shown.map(it=>`<div class="draw-row"><b></b><i style="background:${ANN_COLOR[it.k]||'#fff'}"></i><span title="${attr(it.label)}">${escapeHtml(it.label)}<small>${TYPE_NAME[it.t]}・報告</small></span><button type="button" data-act="go" data-id="${attr(annSig(it))}">看</button><span></span><button type="button" data-act="del" data-id="${attr(annSig(it))}">刪</button></div>`).join('')
                 + (n ? `<div class="draw-io"><button type="button" data-act="showall">顯示已刪除的 ${n} 個</button></div>` : '');
             })()
           + `<div class="draw-io"><button type="button" data-act="csv">匯出 CSV</button><button type="button" data-act="json">匯出備份</button><button type="button" data-act="import">匯入</button></div><p class="draw-note">標註只存在這台裝置的瀏覽器（共 ${countUser()} 筆）。換裝置或清除瀏覽資料會消失，請匯出備份。</p>`;
