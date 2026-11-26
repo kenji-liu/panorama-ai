@@ -177,6 +177,13 @@ def main():
     ann_path = os.path.join(DATA, "annotations.json")
     annotations = json.load(open(ann_path, encoding="utf-8")) if os.path.exists(ann_path) else {}
 
+    # 要公開給所有人看的自行標註：把網頁「匯出備份」的檔案存成 data/annotations_user.json
+    user_path = os.path.join(DATA, "annotations_user.json")
+    if os.path.exists(user_path):
+        for key, items in json.load(open(user_path, encoding="utf-8-sig")).get("items", {}).items():
+            entry = annotations.setdefault(key, {"date": "", "items": []})
+            entry["items"] = entry["items"] + [dict(i, user=True) for i in items]
+
     state = {"version": 1, "scenes": scenes, "basemap": None, "points": points, "analysisRecords": [],
              "annotations": annotations}
     with open(os.path.join(DATA, "state.json"), "w", encoding="utf-8") as f:

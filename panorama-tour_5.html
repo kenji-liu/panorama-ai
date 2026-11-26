@@ -234,6 +234,30 @@
   }
   .ann-badge:hover{ border-color:var(--accent); }
   .ann-badge b{ font-family:var(--mono); font-weight:500; color:#ffd7c4; }
+  /* ===== 自行標註工具 ===== */
+  .draw-ui{ position:absolute; left:14px; bottom:104px; z-index:22; display:flex; flex-direction:column; align-items:flex-start; gap:6px; max-width:calc(100% - 28px); font-size:12px; color:#fff; cursor:default; }
+  .draw-ui [hidden]{ display:none !important; }
+  .draw-bar,.draw-tools{ display:flex; flex-wrap:wrap; gap:4px; }
+  .draw-bar{ background:rgba(12,14,17,.86); border:1px solid #ffffff33; border-radius:8px; padding:4px; }
+  .draw-ui button{ font:inherit; color:#fff; background:transparent; border:1px solid #ffffff2e; border-radius:6px; padding:5px 10px; cursor:pointer; }
+  .draw-ui button:hover{ border-color:var(--accent); }
+  .draw-ui button.on{ background:var(--accent); border-color:var(--accent); color:#1a1208; font-weight:700; }
+  .draw-hint{ display:flex; flex-wrap:wrap; align-items:center; gap:6px 12px; background:rgba(12,14,17,.86); border:1px solid var(--accent-dim); border-radius:8px; padding:6px 10px; }
+  .draw-tol{ display:flex; align-items:center; gap:6px; }
+  .draw-tol input{ width:130px; accent-color:var(--accent); }
+  .draw-list{ width:min(330px,100%); max-height:min(300px,42vh); overflow:auto; background:rgba(12,14,17,.94); border:1px solid #ffffff33; border-radius:8px; padding:10px; }
+  .draw-list-h{ margin:0 0 4px; font-weight:700; }
+  .draw-row{ display:grid; grid-template-columns:10px minmax(0,1fr) auto auto auto; align-items:center; gap:6px; padding:5px 0; border-top:1px solid #ffffff1f; }
+  .draw-row i{ width:9px; height:9px; border-radius:50%; }
+  .draw-row span{ overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .draw-row small{ display:block; color:#a9b4bb; font-size:10.5px; }
+  .draw-ui .draw-row button{ padding:3px 8px; }
+  .draw-io{ display:flex; flex-wrap:wrap; gap:4px; margin-top:8px; }
+  .draw-note,.draw-empty{ margin:6px 0 0; color:#a9b4bb; font-size:11px; line-height:1.55; }
+  .draw-file{ position:absolute; width:1px; height:1px; opacity:0; overflow:hidden; clip:rect(0,0,0,0); }
+  .drawing,.drawing canvas{ cursor:crosshair !important; }
+  .drawing .hotspot,.drawing .ai-marker{ pointer-events:none !important; }
+
   .priv-row{ display:flex; align-items:center; gap:8px; margin:12px 0 4px; font-size:12.5px; color:var(--text-mid); cursor:pointer; }
   .priv-row input{ width:16px; height:16px; accent-color:var(--accent); }
   .priv-badge{ font-size:11px; margin-left:4px; }
@@ -1744,14 +1768,23 @@
     return out;
   }
 
-  function renderAnn(layer, engine, ann){
+  function renderAnn(layer, engine, ann, key){
     const svg = layer.querySelector('.ann-svg'), tags = layer.querySelector('.ann-tags'), badge = layer.querySelector('.ann-badge');
     svg.innerHTML = ''; tags.innerHTML = '';
-    if(!ann){ layer.style.display = 'none'; return; }
+    const all = (ann && ann.items) || [];
+    const report = all.filter(i=>!i.user);
+    const published = all.filter(i=>i.user), pubIds = new Set(published.map(i=>i.id));
+    const mine = published.concat(((key && userAnn[key]) || []).filter(i=>!pubIds.has(i.id))); // 已公開的不重複畫
+    const draftItems = draftFor(layer.parentElement, key);
+    if(!report.length && !mine.length && !draftItems.length){ layer.style.display = 'none'; return; }
     layer.style.display = '';
-    badge.innerHTML = (annVisible ? '◉' : '○') + ' 報告判釋範圍・<b>約略位置</b>・' + escapeHtml(ann.date||'');
-    badge.title = '點擊顯示／隱藏。範圍由報告的平面照片對位到全景，位置僅供參考。';
-    if(!annVisible) return;
+    badge.style.display = report.length ? '' : 'none';
+    if(report.length){
+      badge.innerHTML = (annVisible ? '◉' : '○') + ' 報告判釋範圍・<b>約略位置</b>・' + escapeHtml(ann.date||'');
+      badge.title = '點擊顯示／隱藏。範圍由報告的平面照片對位到全景，位置僅供參考。';
+    }
+    const items = (annVisible ? report : []).concat(mine, draftItems);
+    if(!items.length) return;
     const vp = engine.viewParams();
     if(!vp.w || !vp.h) return;
     svg.setAttribute('viewBox', `0 0 ${vp.w} ${vp.h}`);
@@ -1760,6 +1793,7 @@
     const NS = 'http://www.w3.org/2000/svg';
     const placed = [];
     const addTag = (at, text, color)=>{
+      if(!text) return;
       const v = engine.projectRaw(at[0], at[1]);
       if(v[2] < 0.05) return;
       const [x,y0] = px(v);
@@ -1774,8 +1808,19 @@
       const d = document.createElement('div'); d.className = 'ann-tag'; d.style.setProperty('--c', color);
       d.style.left = x+'px'; d.style.top = y+'px'; d.textContent = text; tags.appendChild(d);
     };
-    (ann.items||[]).forEach(it=>{
+    items.forEach(it=>{
       const color = ANN_COLOR[it.k] || '#fff';
+      if(it.t === 'vertex'){ // 繪製中的頂點
+        const v = engine.projectRaw(it.at[0], it.at[1]);
+        if(v[2] >= 0.05){
+          const [x,y] = px(v);
+          const c = document.createElementNS(NS,'circle');
+          c.setAttribute('cx', x.toFixed(1)); c.setAttribute('cy', y.toFixed(1)); c.setAttribute('r', '4');
+          c.setAttribute('fill', '#fff'); c.setAttribute('stroke', color); c.setAttribute('stroke-width', '2.5');
+          svg.appendChild(c);
+        }
+        return;
+      }
       if(it.t === 'area'){
         let pts = [];
         for(let i=0;i<it.poly.length;i++) pts = pts.concat(annDensify(it.poly[i], it.poly[(i+1)%it.poly.length]));
@@ -1815,10 +1860,382 @@
       }
     });
   }
-  function renderTourAnn(){
+  function tourKey(){
     const scene = scenes.find(s=>s.id===activeSceneId);
-    renderAnn(annLayerTour, tourEngine, scene ? annotationsData[annKey(scene.src)] : null);
+    return scene ? (annKey(scene.src) || scene.id) : null;
   }
+  function renderTourAnn(){
+    const key = tourKey();
+    syncDrawKey(stage, key);
+    renderAnn(annLayerTour, tourEngine, key ? annotationsData[key] : null, key);
+  }
+
+  /* =========================================================
+     自行標註：點／線／面，以及「點一下辨識相似區域」（裸露地框選）
+     資料只存在這台裝置的瀏覽器（localStorage），可匯出檔案備份或交付公開
+  ========================================================= */
+  const USER_KEY = 'panoUserAnn';
+  let userAnn = {};
+  try{ const v = JSON.parse(localStorage.getItem(USER_KEY)||'{}'); if(v && typeof v==='object') userAnn = v; }catch(e){}
+  const ANN_KINDS = [['wet','濕裸露地'],['dry','乾裸露地'],['veg','植生'],['water','水體'],['mark','設施／地標'],['pole','電桿'],['other','其他']];
+  Object.assign(ANN_COLOR, { dry:'#ff9f43', water:'#4aa3ff', other:'#c9a7ff' });
+  const kindName = k => (ANN_KINDS.find(x=>x[0]===k)||[k, k==='dredge'?'疏濬區':k==='seed'?'撒草籽區':'其他'])[1];
+  const TYPE_NAME = { point:'點', line:'線', area:'面' };
+  const draw = { host:null, engine:null, getKey:null, mode:null, key:null, pts:[], auto:null, seed:null, tol:24, radius:20 };
+  const drawUIs = [];
+
+  function persistUserAnn(){
+    try{ localStorage.setItem(USER_KEY, JSON.stringify(userAnn)); }
+    catch(e){ showToast('瀏覽器無法儲存標註，請立即匯出備份'); }
+  }
+  function redrawAnn(){ renderTourAnn(); if(typeof renderPointAnn === 'function') renderPointAnn(); }
+  function annAnchor(pts, type){
+    if(type==='line') return pts[Math.floor((pts.length-1)/2)];
+    let x=0,y=0,z=0;
+    pts.forEach(p=>{ x+=Math.cos(p[1])*Math.sin(p[0]); y+=Math.sin(p[1]); z+=Math.cos(p[1])*Math.cos(p[0]); });
+    return [Math.atan2(x,z), Math.asin(Math.max(-1,Math.min(1,y/(Math.hypot(x,y,z)||1))))];
+  }
+  function draftFor(host, key){
+    if(draw.host !== host || !draw.mode || draw.key !== key) return [];
+    if(draw.mode === 'auto'){
+      return draw.auto ? [{ t:'area', k:'wet', label:'辨識範圍（未儲存）', poly:draw.auto, at:annAnchor(draw.auto,'area') }] : [];
+    }
+    const p = draw.pts, out = [];
+    if(draw.mode === 'area' && p.length >= 3) out.push({ t:'area', k:'other', label:'', poly:p, at:p[0] });
+    else if(p.length >= 2) out.push({ t:'line', k:'other', label:'', pts:p, at:p[0] });
+    p.forEach(v=>out.push({ t:'vertex', k:'other', at:v }));
+    return out;
+  }
+  function resetDraft(){ draw.pts = []; draw.auto = null; draw.seed = null; }
+
+  /* ---- 辨識：以點選位置為種子做顏色相似區域擴張 ---- */
+  const segCache = new Map();
+  function segImage(img, key){
+    if(segCache.has(key)) return segCache.get(key);
+    const W = 2048, H = 1024;
+    const c = document.createElement('canvas'); c.width = W; c.height = H;
+    const x = c.getContext('2d', { willReadFrequently:true }); x.drawImage(img, 0, 0, W, H);
+    const d = x.getImageData(0, 0, W, H).data;
+    const Y = new Float32Array(W*H), Cb = new Float32Array(W*H), Cr = new Float32Array(W*H);
+    for(let i=0,j=0;i<W*H;i++,j+=4){
+      const r=d[j], g=d[j+1], b=d[j+2];
+      Y[i] = 0.299*r+0.587*g+0.114*b; Cb[i] = -0.169*r-0.331*g+0.5*b; Cr[i] = 0.5*r-0.419*g-0.081*b;
+    }
+    // 方框模糊（半徑 2），降低砂紋與雜訊
+    const tmp = new Float32Array(W*H);
+    [Y,Cb,Cr].forEach(a=>{
+      for(let yy=0;yy<H;yy++) for(let xx=0;xx<W;xx++){ let s=0; for(let k=-2;k<=2;k++) s+=a[yy*W+((xx+k+W)%W)]; tmp[yy*W+xx]=s/5; }
+      for(let yy=0;yy<H;yy++) for(let xx=0;xx<W;xx++){ let s=0; for(let k=-2;k<=2;k++) s+=tmp[Math.max(0,Math.min(H-1,yy+k))*W+xx]; a[yy*W+xx]=s/5; }
+    });
+    // 亮度梯度：邊緣（水岸、田埂）當作擴張的阻擋
+    const G = new Float32Array(W*H);
+    for(let yy=1;yy<H-1;yy++) for(let xx=0;xx<W;xx++){
+      const i=yy*W+xx;
+      G[i] = Math.hypot((Y[yy*W+((xx+1)%W)]-Y[yy*W+((xx-1+W)%W)])/2, (Y[i+W]-Y[i-W])/2);
+    }
+    const out = { W, H, Y, Cb, Cr, G };
+    if(segCache.size >= 2) segCache.delete(segCache.keys().next().value);
+    segCache.set(key, out);
+    return out;
+  }
+  // 以種子色為基準，找出「顏色相近、沒有跨越明顯邊緣、且在指定半徑內」的相連區域
+  // 權重與梯度門檻是用空拍報告的人工圈選範圍調出來的
+  function growRegion(S, lon, lat, tol, radiusDeg){
+    const { W, H, Y, Cb, Cr, G } = S;
+    const su = ((Math.floor((lon/(2*Math.PI)+0.5)*W) % W) + W) % W;
+    const sv = Math.max(0, Math.min(H-1, Math.floor((0.5-lat/Math.PI)*H)));
+    const shift = su - (W>>1);           // 以種子為中心的座標系，避免跨越全景左右接縫
+    const minY = (H>>1) + 2;             // 只在地平線以下擴張，避免吃到天空
+    if(sv < minY) return null;
+    const src = (x,y)=> y*W + (((x+shift)%W)+W)%W;
+    const med = A => { const v=[]; for(let dy=-4;dy<=4;dy++) for(let dx=-4;dx<=4;dx++) v.push(A[src((W>>1)+dx, Math.max(minY, Math.min(H-1, sv+dy)))]); v.sort((a,b)=>a-b); return v[v.length>>1]; };
+    const mY = med(Y), mCb = med(Cb), mCr = med(Cr);
+    // 半徑限制（球面角距）
+    const lat0 = (0.5-(sv+0.5)/H)*Math.PI, cosR = Math.cos(radiusDeg*Math.PI/180);
+    const cosLon = new Float32Array(W); for(let x=0;x<W;x++) cosLon[x] = Math.cos((x-(W>>1))*2*Math.PI/W);
+    const sinRow = new Float32Array(H), cosRow = new Float32Array(H);
+    for(let y=0;y<H;y++){ const a=(0.5-(y+0.5)/H)*Math.PI; sinRow[y]=Math.sin(a)*Math.sin(lat0); cosRow[y]=Math.cos(a)*Math.cos(lat0); }
+    const mask = new Uint8Array(W*H), stack = new Int32Array(W*H);
+    let top = 0;
+    const start = sv*W + (W>>1); mask[start] = 1; stack[top++] = start;
+    while(top){
+      const p = stack[--top];
+      const px = p % W, py = (p / W) | 0;
+      for(let k=0;k<4;k++){
+        const nx = px + (k===0?-1:k===1?1:0), ny = py + (k===2?-1:k===3?1:0);
+        if(nx<1||nx>=W-1||ny<minY||ny>=H-1) continue;
+        const q = ny*W+nx; if(mask[q]) continue;
+        if(sinRow[ny] + cosRow[ny]*cosLon[nx] < cosR) continue;
+        const i = src(nx,ny);
+        const nearSeed = Math.abs(nx-(W>>1))<=2 && Math.abs(ny-sv)<=2;
+        // 色度權重高、亮度權重低（容忍陰影與濕度深淺）
+        if(!nearSeed && (G[i] > 6 || Math.hypot(0.35*(Y[i]-mY), 3*(Cb[i]-mCb), 3*(Cr[i]-mCr)) > tol)) continue;
+        mask[q] = 1; stack[top++] = q;
+      }
+    }
+    // 閉運算（膨脹再侵蝕）補小縫
+    const morph = (m, dil)=>{
+      const o = new Uint8Array(W*H);
+      for(let y=minY;y<H-1;y++) for(let x=1;x<W-1;x++){
+        const i=y*W+x, a=m[i], b=m[i-1], c=m[i+1], d=m[i-W], e=m[i+W];
+        o[i] = dil ? (a|b|c|d|e) : (a&b&c&d&e);
+      }
+      return o;
+    };
+    let m = morph(morph(morph(morph(mask,true),true),false),false);
+    if(!m[start]) m = mask;
+    // 只保留含種子的連通區
+    const comp = new Uint8Array(W*H); top = 0; comp[start]=1; stack[top++]=start; let size=0;
+    while(top){ const p=stack[--top]; size++;
+      [p-1,p+1,p-W,p+W].forEach(q=>{ if(q>=0 && q<W*H && m[q] && !comp[q]){ comp[q]=1; stack[top++]=q; } });
+    }
+    if(size < 30) return null;
+    // Moore 鄰域外框追蹤
+    const DX=[-1,-1,0,1,1,1,0,-1], DY=[0,-1,-1,-1,0,1,1,1];
+    let s = -1; for(let i=minY*W;i<W*H;i++){ if(comp[i]){ s=i; break; } }
+    const sx = s%W, sy = (s/W)|0; let cx=sx, cy=sy, dir=0; const ring=[[sx,sy]];
+    for(let step=0; step<60000; step++){
+      let found=false;
+      for(let i=1;i<=8;i++){
+        const d=(dir+i)%8, nx=cx+DX[d], ny=cy+DY[d];
+        if(nx>=0&&nx<W&&ny>=0&&ny<H&&comp[ny*W+nx]){
+          const pd=(d+7)%8, bx=cx+DX[pd], by=cy+DY[pd];
+          cx=nx; cy=ny;
+          for(let j=0;j<8;j++) if(cx+DX[j]===bx && cy+DY[j]===by){ dir=j; break; }
+          found=true; break;
+        }
+      }
+      if(!found || (cx===sx && cy===sy)) break;
+      ring.push([cx,cy]);
+    }
+    // Douglas-Peucker 簡化，控制頂點數
+    const simplify = (pts, eps)=>{
+      const keep = new Uint8Array(pts.length); keep[0]=keep[pts.length-1]=1;
+      const mid = pts.length>>1; keep[mid]=1;
+      const st = [[0,mid],[mid,pts.length-1]];
+      while(st.length){
+        const [a,b] = st.pop(); let best=0, bi=-1;
+        const [ax,ay]=pts[a], [bx,by]=pts[b], L=Math.hypot(bx-ax,by-ay)||1;
+        for(let i=a+1;i<b;i++){ const d=Math.abs((bx-ax)*(ay-pts[i][1])-(ax-pts[i][0])*(by-ay))/L; if(d>best){ best=d; bi=i; } }
+        if(best>eps){ keep[bi]=1; st.push([a,bi],[bi,b]); }
+      }
+      return pts.filter((_,i)=>keep[i]);
+    };
+    let eps = 1.5, poly = simplify(ring, eps);
+    while(poly.length > 160){ eps *= 1.4; poly = simplify(ring, eps); }
+    if(poly.length < 3) return null;
+    return { poly: poly.map(([x,y])=>{
+      const ux = (((x+shift)%W)+W)%W;
+      return [ +(((ux+0.5)/W-0.5)*2*Math.PI).toFixed(5), +((0.5-(y+0.5)/H)*Math.PI).toFixed(5) ];
+    }) };
+  }
+  function runAuto(){
+    if(!draw.seed || !draw.engine.state.img) return;
+    let res = null;
+    try{ res = growRegion(segImage(draw.engine.state.img, draw.key), draw.seed[0], draw.seed[1], draw.tol, draw.radius); }
+    catch(e){ showToast('此影像無法進行辨識'); return; }
+    draw.auto = res ? res.poly : null;
+    if(!res) showToast('找不到範圍，請點選地平線以下的地面，或調高容許度');
+    redrawAnn(); updateDrawUI();
+  }
+
+  /* ---- 命名視窗 ---- */
+  let nameModal = null, nameDone = null;
+  function askName(init, done){
+    if(!nameModal){
+      nameModal = document.createElement('div'); nameModal.className = 'modal-overlay';
+      nameModal.innerHTML = `<div class="modal"><p class="modal-title">標註名稱</p>
+        <label class="field-label" for="annot-name">名稱</label><input class="field-input" id="annot-name" maxlength="60" placeholder="例：左岸裸露地 A">
+        <label class="field-label" for="annot-kind">類別</label><select class="field-input" id="annot-kind">${ANN_KINDS.map(k=>`<option value="${k[0]}">${k[1]}</option>`).join('')}</select>
+        <div class="modal-actions"><button class="btn btn-ghost" data-a="no">取消</button><button class="btn btn-primary" data-a="ok" style="flex:none; padding:8px 18px;">儲存</button></div></div>`;
+      document.body.appendChild(nameModal);
+      const close = ()=>{ nameModal.classList.remove('show'); nameDone = null; };
+      const ok = ()=>{
+        const name = nameModal.querySelector('#annot-name').value.trim();
+        if(!name){ showToast('請輸入名稱'); return; }
+        const f = nameDone; const k = nameModal.querySelector('#annot-kind').value; close(); if(f) f(name, k);
+      };
+      nameModal.addEventListener('click', e=>{ if(e.target===nameModal || e.target.dataset.a==='no') close(); if(e.target.dataset.a==='ok') ok(); });
+      nameModal.querySelector('#annot-name').addEventListener('keydown', e=>{ if(e.key==='Enter') ok(); });
+    }
+    nameDone = done;
+    nameModal.querySelector('#annot-name').value = init.name || '';
+    nameModal.querySelector('#annot-kind').value = init.kind || 'wet';
+    nameModal.classList.add('show');
+    setTimeout(()=>nameModal.querySelector('#annot-name').focus(), 50);
+  }
+  function nextName(key, kind){
+    const n = (userAnn[key]||[]).filter(i=>i.k===kind).length + 1;
+    return kindName(kind) + ' ' + n;
+  }
+  function saveItem(type, pts, method, defKind){
+    const key = draw.key;
+    askName({ name: nextName(key, defKind), kind: defKind }, (label, k)=>{
+      const it = { id:'u-'+Date.now().toString(36)+Math.random().toString(36).slice(2,6), t:type, k, label, user:true, method, created:new Date().toISOString() };
+      if(type==='point') it.at = pts[0];
+      else { it[type==='area'?'poly':'pts'] = pts; it.at = annAnchor(pts, type); }
+      (userAnn[key] = userAnn[key] || []).push(it);
+      persistUserAnn(); resetDraft(); redrawAnn(); updateDrawUI(); showToast('已儲存「'+label+'」');
+    });
+  }
+  function finishDraft(){
+    if(draw.mode==='auto'){ if(draw.auto) saveItem('area', draw.auto, 'auto', 'wet'); else showToast('請先點選要辨識的地面'); return; }
+    if(draw.mode==='line'){ if(draw.pts.length>=2) saveItem('line', draw.pts.slice(), 'manual', 'mark'); else showToast('線至少需要 2 個點'); return; }
+    if(draw.mode==='area'){ if(draw.pts.length>=3) saveItem('area', draw.pts.slice(), 'manual', 'wet'); else showToast('面至少需要 3 個點'); }
+  }
+
+  /* ---- 匯出 / 匯入 ---- */
+  function downloadText(name, text, mime){
+    const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob([text], {type:mime})); a.download = name;
+    a.click(); setTimeout(()=>URL.revokeObjectURL(a.href), 1000);
+  }
+  function countUser(){ return Object.values(userAnn).reduce((n,a)=>n+a.length, 0); }
+  function exportAnnJson(){
+    if(!countUser()){ showToast('目前沒有自行標註的資料'); return; }
+    downloadText('環景標註-'+new Date().toISOString().slice(0,10)+'.json', JSON.stringify({version:1, items:userAnn}, null, 1), 'application/json');
+  }
+  function exportAnnCsv(){
+    if(!countUser()){ showToast('目前沒有自行標註的資料'); return; }
+    const deg = v => (v*180/Math.PI).toFixed(2);
+    const q = v => { let s = String(v==null?'':v); if(/^[=+\-@]/.test(s) && isNaN(Number(s))) s = "'"+s; return '"'+s.replace(/"/g,'""')+'"'; };
+    const rows = [['全景ID','類型','類別','名稱','方式','中心yaw(度)','中心pitch(度)','頂點(yaw pitch;…)','建立時間']];
+    Object.entries(userAnn).forEach(([key, list])=>list.forEach(it=>{
+      const v = it.poly || it.pts || [it.at];
+      rows.push([key, TYPE_NAME[it.t], kindName(it.k), it.label, it.method==='auto'?'辨識':'手繪', deg(it.at[0]), deg(it.at[1]), v.map(p=>deg(p[0])+' '+deg(p[1])).join(';'), it.created||'']);
+    }));
+    downloadText('環景標註-'+new Date().toISOString().slice(0,10)+'.csv', '﻿'+rows.map(r=>r.map(q).join(',')).join('\r\n'), 'text/csv;charset=utf-8');
+  }
+  function importAnn(file){
+    const reader = new FileReader();
+    reader.onload = ()=>{
+      try{
+        const data = JSON.parse(reader.result); let n = 0;
+        const num = p => Array.isArray(p) && p.length===2 && p.every(Number.isFinite);
+        Object.entries(data.items||{}).forEach(([key, list])=>{
+          if(!/^[\w-]{1,60}$/.test(key) || !Array.isArray(list)) return;
+          list.forEach(it=>{
+            if(!it || !TYPE_NAME[it.t] || !num(it.at)) return;
+            if(it.t==='area' && !(Array.isArray(it.poly) && it.poly.length>=3 && it.poly.every(num))) return;
+            if(it.t==='line' && !(Array.isArray(it.pts) && it.pts.length>=2 && it.pts.every(num))) return;
+            const cur = userAnn[key] = userAnn[key] || [];
+            const clean = { id:String(it.id||('u-'+Math.random().toString(36).slice(2))), t:it.t, k:String(it.k||'other'), label:String(it.label||'').slice(0,60), at:it.at, user:true, method:it.method==='auto'?'auto':'manual', created:String(it.created||'') };
+            if(it.t==='area') clean.poly = it.poly; if(it.t==='line') clean.pts = it.pts;
+            const i = cur.findIndex(x=>x.id===clean.id); if(i>=0) cur[i] = clean; else cur.push(clean); n++;
+          });
+        });
+        persistUserAnn(); redrawAnn(); updateDrawUI(); showToast('已匯入 '+n+' 筆標註');
+      }catch(e){ showToast('匯入失敗：檔案格式不正確'); }
+    };
+    reader.readAsText(file);
+  }
+
+  /* ---- 工具列 ---- */
+  function createDrawUI(host, engine, getKey, blocked){
+    const ui = document.createElement('div'); ui.className = 'draw-ui';
+    ui.innerHTML = `
+      <div class="draw-list" hidden></div>
+      <div class="draw-hint" hidden><span class="draw-hint-text"></span>
+        <label class="draw-tol" hidden>容許度 <input type="range" data-k="tol" min="6" max="46" step="2"><b></b></label>
+        <label class="draw-tol" hidden>範圍 <input type="range" data-k="radius" min="6" max="70" step="2"><b></b></label></div>
+      <div class="draw-bar">
+        <button type="button" data-act="toggle">✎ 標註</button>
+        <span class="draw-tools" hidden>
+          <button type="button" data-mode="point">點</button><button type="button" data-mode="line">線</button><button type="button" data-mode="area">面</button><button type="button" data-mode="auto">辨識裸露地</button>
+          <button type="button" data-act="finish">完成</button><button type="button" data-act="undo">退一點</button><button type="button" data-act="list">清單</button><button type="button" data-act="close">關閉</button>
+        </span>
+      </div>
+      <input type="file" class="draw-file" accept=".json,application/json" tabindex="-1" aria-hidden="true">`;
+    host.appendChild(ui);
+    ['mousedown','touchstart','click','dblclick','wheel','pointerdown','pointerup'].forEach(ev=>ui.addEventListener(ev, e=>e.stopPropagation(), {passive:true}));
+    const rec = { host, engine, getKey, ui, open:false, list:false };
+    drawUIs.push(rec);
+    const activate = mode=>{
+      Object.assign(draw, { host, engine, getKey, mode, key:getKey() }); resetDraft(); redrawAnn(); updateDrawUI();
+    };
+    ui.addEventListener('click', e=>{
+      const b = e.target.closest('button'); if(!b) return;
+      if(b.dataset.mode){ if(!getKey()){ showToast('請先載入一張全景'); return; } activate(b.dataset.mode); return; }
+      const a = b.dataset.act;
+      if(a==='toggle'){ rec.open = true; activate(null); }
+      else if(a==='close'){ rec.open = false; rec.list = false; Object.assign(draw, {mode:null, host:null}); resetDraft(); redrawAnn(); updateDrawUI(); }
+      else if(a==='finish') finishDraft();
+      else if(a==='undo'){ if(draw.mode==='auto'){ resetDraft(); } else draw.pts.pop(); redrawAnn(); updateDrawUI(); }
+      else if(a==='list'){ rec.list = !rec.list; updateDrawUI(); }
+      else if(a==='json') exportAnnJson();
+      else if(a==='csv') exportAnnCsv();
+      else if(a==='import') ui.querySelector('.draw-file').click();
+      else if(a==='go' || a==='edit' || a==='del'){
+        const key = getKey(), list = userAnn[key]||[], it = list.find(x=>x.id===b.dataset.id); if(!it) return;
+        if(a==='go'){ engine.state.yaw = it.at[0]; engine.state.pitch = engine.clampPitch(-it.at[1]); engine.render(); if(engine===tourEngine) placeHotspots(); else { placePointAiMarkers(); renderPointAnn(); } }
+        else if(a==='edit'){ askName({name:it.label, kind:it.k}, (label,k)=>{ it.label=label; it.k=k; persistUserAnn(); redrawAnn(); updateDrawUI(); }); }
+        else if(confirm('刪除標註「'+it.label+'」？')){ userAnn[key] = list.filter(x=>x!==it); if(!userAnn[key].length) delete userAnn[key]; persistUserAnn(); redrawAnn(); updateDrawUI(); }
+      }
+    });
+    ui.querySelector('.draw-file').addEventListener('change', e=>{ if(e.target.files[0]) importAnn(e.target.files[0]); e.target.value=''; });
+    ui.querySelectorAll('input[type=range]').forEach(el=>el.addEventListener('input', ()=>{
+      draw[el.dataset.k] = Number(el.value); el.nextElementSibling.textContent = el.value + (el.dataset.k==='radius'?'°':'');
+      clearTimeout(rec.timer); rec.timer = setTimeout(runAuto, 150);
+    }));
+    // 點擊（非拖曳）才新增節點；拖曳仍然是旋轉視角
+    let down = null;
+    host.addEventListener('pointerdown', e=>{ down = e.isPrimary ? {x:e.clientX, y:e.clientY} : null; });
+    host.addEventListener('pointerup', e=>{
+      if(!down || draw.host!==host || !draw.mode) return;
+      const moved = Math.hypot(e.clientX-down.x, e.clientY-down.y); down = null;
+      if(moved > 6 || e.target.closest('.draw-ui,.ann-badge,button,select,input,a,.icon-btn,.stage-title-wrap,.zoom-group,#point-bottombar,#split-line,#hotspot-banner')) return;
+      const r = host.getBoundingClientRect(), x = e.clientX-r.left, y = e.clientY-r.top;
+      const why = blocked && blocked(x); if(why){ showToast(why); return; }
+      const key = getKey(); if(!key) return;
+      if(draw.key !== key){ draw.key = key; resetDraft(); }
+      const q = engine.screenToYawPitch(x, y), pt = [ +q.yaw.toFixed(5), +q.pitch.toFixed(5) ];
+      if(draw.mode==='point') saveItem('point', [pt], 'manual', 'mark');
+      else if(draw.mode==='auto'){ draw.seed = pt; runAuto(); }
+      else { draw.pts.push(pt); redrawAnn(); updateDrawUI(); }
+    });
+    updateDrawUI();
+  }
+  function updateDrawUI(){
+    drawUIs.forEach(r=>{
+      const ui = r.ui, mine = draw.host === r.host, mode = mine ? draw.mode : null;
+      r.host.classList.toggle('drawing', !!mode);
+      ui.querySelector('[data-act="toggle"]').hidden = r.open;
+      ui.querySelector('.draw-tools').hidden = !r.open;
+      ui.querySelectorAll('[data-mode]').forEach(b=>b.classList.toggle('on', b.dataset.mode===mode));
+      ui.querySelector('[data-act="finish"]').hidden = !(mode==='line' || mode==='area' || (mode==='auto' && draw.auto));
+      ui.querySelector('[data-act="undo"]').hidden = !((mode==='line'||mode==='area') ? draw.pts.length : (mode==='auto' && draw.auto));
+      const hint = ui.querySelector('.draw-hint');
+      hint.hidden = !(r.open && mode);
+      const texts = { point:'點一下畫面放置一個點', line:'依序點選線上的點（已 '+draw.pts.length+' 點），按「完成」', area:'依序點選範圍的角點（已 '+draw.pts.length+' 點），按「完成」', auto: draw.auto ? '範圍不理想可調整容許度；沒問題按「完成」命名' : '點一下要辨識的裸露地（地平線以下）' };
+      ui.querySelector('.draw-hint-text').textContent = texts[mode] || '';
+      ui.querySelectorAll('.draw-tol').forEach(l=>{
+        l.hidden = mode!=='auto';
+        const el = l.querySelector('input'); el.value = draw[el.dataset.k];
+        l.querySelector('b').textContent = draw[el.dataset.k] + (el.dataset.k==='radius'?'°':'');
+      });
+      const box = ui.querySelector('.draw-list'); box.hidden = !(r.open && r.list);
+      if(!box.hidden){
+        const list = userAnn[r.getKey()] || [];
+        const attr = s => escapeHtml(s).replace(/"/g,'&quot;'); // 名稱可能來自匯入檔，屬性值要跳脫引號
+        box.innerHTML = `<p class="draw-list-h">本張全景的標註（${list.length}）</p>`
+          + (list.length ? list.map(it=>`<div class="draw-row"><i style="background:${ANN_COLOR[it.k]||'#fff'}"></i><span title="${attr(it.label)}">${escapeHtml(it.label)}<small>${TYPE_NAME[it.t]}・${escapeHtml(kindName(it.k))}</small></span><button type="button" data-act="go" data-id="${attr(it.id)}">看</button><button type="button" data-act="edit" data-id="${attr(it.id)}">改</button><button type="button" data-act="del" data-id="${attr(it.id)}">刪</button></div>`).join('') : '<p class="draw-empty">尚無標註</p>')
+          + `<div class="draw-io"><button type="button" data-act="csv">匯出 CSV</button><button type="button" data-act="json">匯出備份</button><button type="button" data-act="import">匯入</button></div><p class="draw-note">標註只存在這台裝置的瀏覽器（共 ${countUser()} 筆）。換裝置或清除瀏覽資料會消失，請匯出備份。</p>`;
+      }
+    });
+  }
+  // 換了全景就丟掉未儲存的草稿，並更新清單
+  const lastDrawKey = new Map();
+  function syncDrawKey(host, key){
+    if(lastDrawKey.get(host) === key) return;
+    lastDrawKey.set(host, key);
+    if(draw.host === host && draw.key !== key){ draw.key = key; resetDraft(); }
+    updateDrawUI();
+  }
+  document.addEventListener('keydown', e=>{
+    if(!draw.mode || e.target.closest('input,textarea,select,button') || document.querySelector('.modal-overlay.show')) return;
+    if(e.key==='Enter') finishDraft();
+    else if(e.key==='Escape'){ resetDraft(); redrawAnn(); updateDrawUI(); }
+  });
+  createDrawUI(stage, tourEngine, tourKey);
   let hotspotMode=false, pendingHotspotPos=null;
 
   tourEngine.bindDrag({
@@ -2646,10 +3063,20 @@
   }
 
   const annLayerPoint = createAnnLayer(pointStage);
-  function renderPointAnn(){
+  function pointKey(){
     const e = activeEpochObj();
-    renderAnn(annLayerPoint, pointEngine, e ? annotationsData[annKey(e.src)] : null);
+    return e ? (annKey(e.src) || e.id) : null;
   }
+  function renderPointAnn(){
+    const key = pointKey();
+    syncDrawKey(pointStage, key);
+    renderAnn(annLayerPoint, pointEngine, key ? annotationsData[key] : null, key);
+  }
+  createDrawUI(pointStage, pointEngine, pointKey, x=>{
+    if(calibrating) return '請先完成校準';
+    if(splitOn && x > splitRatio * pointStage.clientWidth) return '請在左側（目前時期）的畫面上標註';
+    return null;
+  });
   const _pointEngineRender = pointEngine.render;
   pointEngine.render = function(){ _pointEngineRender.call(pointEngine); placePointAiMarkers(); renderPointAnn(); };
 
