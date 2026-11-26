@@ -256,6 +256,9 @@
   .draw-note,.draw-empty{ margin:6px 0 0; color:#a9b4bb; font-size:11px; line-height:1.55; }
   .draw-file{ position:absolute; width:1px; height:1px; opacity:0; overflow:hidden; clip:rect(0,0,0,0); }
   .drawing,.drawing canvas{ cursor:crosshair !important; }
+  .erasing .ann-tag{ pointer-events:auto; cursor:pointer; padding:6px 10px; border-style:dashed; }
+  .erasing .ann-tag::after{ content:' ✕'; color:#ff8d7f; font-weight:700; }
+  .erasing .ann-tag:hover{ background:rgba(120,32,24,.95); }
   .drawing .hotspot,.drawing .ai-marker{ pointer-events:none !important; }
 
   .priv-row{ display:flex; align-items:center; gap:8px; margin:12px 0 4px; font-size:12.5px; color:var(--text-mid); cursor:pointer; }
@@ -1773,7 +1776,7 @@
     svg.innerHTML = ''; tags.innerHTML = '';
     const all = (ann && ann.items) || [];
     const report = all.filter(i=>!i.user);
-    const published = all.filter(i=>i.user), pubIds = new Set(published.map(i=>i.id));
+    const published = all.filter(i=>i.user && !isHidden(key,i)), pubIds = new Set(all.filter(i=>i.user).map(i=>i.id));
     const mine = published.concat(((key && userAnn[key]) || []).filter(i=>!pubIds.has(i.id))); // 已公開的不重複畫
     const draftItems = draftFor(layer.parentElement, key);
     if(!report.length && !mine.length && !draftItems.length){ layer.style.display = 'none'; return; }
@@ -1783,7 +1786,7 @@
       badge.innerHTML = (annVisible ? '◉' : '○') + ' 報告判釋範圍・<b>約略位置</b>・' + escapeHtml(ann.date||'');
       badge.title = '點擊顯示／隱藏。範圍由報告的平面照片對位到全景，位置僅供參考。';
     }
-    const items = (annVisible ? report : []).concat(mine, draftItems);
+    const items = (annVisible ? report.filter(i=>!isHidden(key,i)) : []).concat(mine, draftItems);
     if(!items.length) return;
     const vp = engine.viewParams();
     if(!vp.w || !vp.h) return;
@@ -1792,7 +1795,7 @@
     const px = v => [ (((v[0]/v[2])/(vp.tanHalf*aspect))*0.5+0.5)*vp.w, (1-(((v[1]/v[2])/vp.tanHalf)*0.5+0.5))*vp.h ];
     const NS = 'http://www.w3.org/2000/svg';
     const placed = [];
-    const addTag = (at, text, color)=>{
+    const addTag = (at, text, color, item)=>{
       if(!text) return;
       const v = engine.projectRaw(at[0], at[1]);
       if(v[2] < 0.05) return;
@@ -1807,6 +1810,7 @@
       placed.push({ x, y, w });
       const d = document.createElement('div'); d.className = 'ann-tag'; d.style.setProperty('--c', color);
       d.style.left = x+'px'; d.style.top = y+'px'; d.textContent = text; tags.appendChild(d);
+      if(item && !item.draft) d.dataset.ref = annSig(item);
     };
     items.forEach(it=>{
       const color = ANN_COLOR[it.k] || '#fff';
@@ -1832,7 +1836,7 @@
           el.setAttribute('stroke', color); el.setAttribute('stroke-width', '2'); el.setAttribute('stroke-dasharray', '7 5');
           svg.appendChild(el);
         }
-        addTag(it.at, it.label, color);
+        addTag(it.at, it.label, color, it);
       } else if(it.t === 'line'){
         let pts = [];
         for(let i=0;i+1<it.pts.length;i++) pts = pts.concat(annDensify(it.pts[i], it.pts[i+1]));
@@ -1844,7 +1848,7 @@
           el.setAttribute('fill', 'none'); el.setAttribute('stroke', color); el.setAttribute('stroke-width', '3.5');
           svg.appendChild(el);
         }
-        addTag(it.at, it.label, color);
+        addTag(it.at, it.label, color, it);
       } else {
         const v = engine.projectRaw(it.at[0], it.at[1]);
         if(v[2] >= 0.05){
@@ -1856,7 +1860,7 @@
             svg.appendChild(c);
           }
         }
-        addTag(it.at, it.label, color);
+        addTag(it.at, it.label, color, it);
       }
     });
   }
@@ -1888,6 +1892,35 @@
     try{ localStorage.setItem(USER_KEY, JSON.stringify(userAnn)); }
     catch(e){ showToast('瀏覽器無法儲存標註，請立即匯出備份'); }
   }
+  // 刪除：自己畫的直接移除；報告/已公開的標示屬於網站資料，只在這台裝置隱藏。兩者都可復原
+  const HIDDEN_KEY = 'panoHiddenAnn';
+  let hiddenAnn = {};
+  try{ const v = JSON.parse(localStorage.getItem(HIDDEN_KEY)||'{}'); if(v && typeof v==='object') hiddenAnn = v; }catch(e){}
+  const trash = [];
+  function persistHidden(){ try{ localStorage.setItem(HIDDEN_KEY, JSON.stringify(hiddenAnn)); }catch(e){} }
+  function annSig(it){ return it.id || [it.t, it.label, (it.at||[]).join(',')].join('|'); }
+  function isHidden(key, it){ return !!(hiddenAnn[key] && hiddenAnn[key].includes(annSig(it))); }
+  function removeAnnotation(key, ref){
+    const list = userAnn[key] || [], i = list.findIndex(x=>x.id===ref);
+    let name = '';
+    if(i >= 0){
+      const [item] = list.splice(i,1); name = item.label;
+      if(!list.length) delete userAnn[key];
+      trash.push({ key, item, index:i }); persistUserAnn();
+    } else {
+      const it = ((annotationsData[key]||{}).items||[]).find(x=>annSig(x)===ref);
+      if(!it) return;
+      name = it.label; (hiddenAnn[key] = hiddenAnn[key] || []).push(ref);
+      trash.push({ key, sig:ref }); persistHidden();
+    }
+    redrawAnn(); updateDrawUI(); showToast('已刪除「'+name+'」，可按「復原刪除」');
+  }
+  function restoreAnnotation(){
+    const t = trash.pop(); if(!t) return;
+    if(t.item){ const list = userAnn[t.key] = userAnn[t.key] || []; list.splice(t.index, 0, t.item); persistUserAnn(); }
+    else { hiddenAnn[t.key] = (hiddenAnn[t.key]||[]).filter(s=>s!==t.sig); persistHidden(); }
+    redrawAnn(); updateDrawUI(); showToast('已復原');
+  }
   function redrawAnn(){ renderTourAnn(); if(typeof renderPointAnn === 'function') renderPointAnn(); }
   function annAnchor(pts, type){
     if(type==='line') return pts[Math.floor((pts.length-1)/2)];
@@ -1898,7 +1931,7 @@
   function draftFor(host, key){
     if(draw.host !== host || !draw.mode || draw.key !== key) return [];
     if(draw.mode === 'auto'){
-      return draw.auto ? [{ t:'area', k:'wet', label:'辨識範圍（未儲存）', poly:draw.auto, at:annAnchor(draw.auto,'area') }] : [];
+      return draw.auto ? [{ t:'area', k:'wet', draft:true, label:'辨識範圍（未儲存）', poly:draw.auto, at:annAnchor(draw.auto,'area') }] : [];
     }
     const p = draw.pts, out = [];
     if(draw.mode === 'area' && p.length >= 3) out.push({ t:'area', k:'other', label:'', poly:p, at:p[0] });
@@ -2141,6 +2174,7 @@
         <button type="button" data-act="toggle">✎ 標註</button>
         <span class="draw-tools" hidden>
           <button type="button" data-mode="point">點</button><button type="button" data-mode="line">線</button><button type="button" data-mode="area">面</button><button type="button" data-mode="auto">辨識裸露地</button>
+          <button type="button" data-mode="erase">刪除</button><button type="button" data-act="restore">復原刪除</button>
           <button type="button" data-act="finish">完成</button><button type="button" data-act="undo">退一點</button><button type="button" data-act="list">清單</button><button type="button" data-act="close">關閉</button>
         </span>
       </div>
@@ -2164,11 +2198,14 @@
       else if(a==='json') exportAnnJson();
       else if(a==='csv') exportAnnCsv();
       else if(a==='import') ui.querySelector('.draw-file').click();
+      else if(a==='restore') restoreAnnotation();
+      else if(a==='showall'){ delete hiddenAnn[getKey()]; persistHidden(); redrawAnn(); updateDrawUI(); }
       else if(a==='go' || a==='edit' || a==='del'){
-        const key = getKey(), list = userAnn[key]||[], it = list.find(x=>x.id===b.dataset.id); if(!it) return;
+        const key = getKey(), ref = b.dataset.id;
+        const it = (userAnn[key]||[]).find(x=>x.id===ref) || ((annotationsData[key]||{}).items||[]).find(x=>annSig(x)===ref); if(!it) return;
         if(a==='go'){ engine.state.yaw = it.at[0]; engine.state.pitch = engine.clampPitch(-it.at[1]); engine.render(); if(engine===tourEngine) placeHotspots(); else { placePointAiMarkers(); renderPointAnn(); } }
         else if(a==='edit'){ askName({name:it.label, kind:it.k}, (label,k)=>{ it.label=label; it.k=k; persistUserAnn(); redrawAnn(); updateDrawUI(); }); }
-        else if(confirm('刪除標註「'+it.label+'」？')){ userAnn[key] = list.filter(x=>x!==it); if(!userAnn[key].length) delete userAnn[key]; persistUserAnn(); redrawAnn(); updateDrawUI(); }
+        else removeAnnotation(key, ref);
       }
     });
     ui.querySelector('.draw-file').addEventListener('change', e=>{ if(e.target.files[0]) importAnn(e.target.files[0]); e.target.value=''; });
@@ -2183,6 +2220,11 @@
       if(!down || draw.host!==host || !draw.mode) return;
       const moved = Math.hypot(e.clientX-down.x, e.clientY-down.y); down = null;
       if(moved > 6 || e.target.closest('.draw-ui,.ann-badge,button,select,input,a,.icon-btn,.stage-title-wrap,.zoom-group,#point-bottombar,#split-line,#hotspot-banner')) return;
+      if(draw.mode==='erase'){
+        const tag = e.target.closest('.ann-tag'), k = getKey();
+        if(tag && tag.dataset.ref && k) removeAnnotation(k, tag.dataset.ref);
+        return;
+      }
       const r = host.getBoundingClientRect(), x = e.clientX-r.left, y = e.clientY-r.top;
       const why = blocked && blocked(x); if(why){ showToast(why); return; }
       const key = getKey(); if(!key) return;
@@ -2198,6 +2240,8 @@
     drawUIs.forEach(r=>{
       const ui = r.ui, mine = draw.host === r.host, mode = mine ? draw.mode : null;
       r.host.classList.toggle('drawing', !!mode);
+      r.host.classList.toggle('erasing', mode==='erase');
+      ui.querySelector('[data-act="restore"]').hidden = !trash.length;
       ui.querySelector('[data-act="toggle"]').hidden = r.open;
       ui.querySelector('.draw-tools').hidden = !r.open;
       ui.querySelectorAll('[data-mode]').forEach(b=>b.classList.toggle('on', b.dataset.mode===mode));
@@ -2205,7 +2249,7 @@
       ui.querySelector('[data-act="undo"]').hidden = !((mode==='line'||mode==='area') ? draw.pts.length : (mode==='auto' && draw.auto));
       const hint = ui.querySelector('.draw-hint');
       hint.hidden = !(r.open && mode);
-      const texts = { point:'點一下畫面放置一個點', line:'依序點選線上的點（已 '+draw.pts.length+' 點），按「完成」', area:'依序點選範圍的角點（已 '+draw.pts.length+' 點），按「完成」', auto: draw.auto ? '範圍不理想可調整容許度；沒問題按「完成」命名' : '點一下要辨識的裸露地（地平線以下）' };
+      const texts = { erase:'點畫面上要刪除的標籤（報告標示只在這台裝置隱藏）', point:'點一下畫面放置一個點', line:'依序點選線上的點（已 '+draw.pts.length+' 點），按「完成」', area:'依序點選範圍的角點（已 '+draw.pts.length+' 點），按「完成」', auto: draw.auto ? '範圍不理想可調整容許度；沒問題按「完成」命名' : '點一下要辨識的裸露地（地平線以下）' };
       ui.querySelector('.draw-hint-text').textContent = texts[mode] || '';
       ui.querySelectorAll('.draw-tol').forEach(l=>{
         l.hidden = mode!=='auto';
@@ -2218,6 +2262,14 @@
         const attr = s => escapeHtml(s).replace(/"/g,'&quot;'); // 名稱可能來自匯入檔，屬性值要跳脫引號
         box.innerHTML = `<p class="draw-list-h">本張全景的標註（${list.length}）</p>`
           + (list.length ? list.map(it=>`<div class="draw-row"><i style="background:${ANN_COLOR[it.k]||'#fff'}"></i><span title="${attr(it.label)}">${escapeHtml(it.label)}<small>${TYPE_NAME[it.t]}・${escapeHtml(kindName(it.k))}</small></span><button type="button" data-act="go" data-id="${attr(it.id)}">看</button><button type="button" data-act="edit" data-id="${attr(it.id)}">改</button><button type="button" data-act="del" data-id="${attr(it.id)}">刪</button></div>`).join('') : '<p class="draw-empty">尚無標註</p>')
+          + (()=>{
+              const key = r.getKey(), src = ((annotationsData[key]||{}).items||[]);
+              const shown = src.filter(i=>!isHidden(key,i)), n = src.length - shown.length;
+              if(!src.length) return '';
+              return `<p class="draw-list-h" style="margin-top:10px">網站原有標示（${shown.length}）</p>`
+                + shown.map(it=>`<div class="draw-row"><i style="background:${ANN_COLOR[it.k]||'#fff'}"></i><span title="${attr(it.label)}">${escapeHtml(it.label)}<small>${TYPE_NAME[it.t]}・報告</small></span><button type="button" data-act="go" data-id="${attr(annSig(it))}">看</button><span></span><button type="button" data-act="del" data-id="${attr(annSig(it))}">刪</button></div>`).join('')
+                + (n ? `<div class="draw-io"><button type="button" data-act="showall">顯示已刪除的 ${n} 個</button></div>` : '');
+            })()
           + `<div class="draw-io"><button type="button" data-act="csv">匯出 CSV</button><button type="button" data-act="json">匯出備份</button><button type="button" data-act="import">匯入</button></div><p class="draw-note">標註只存在這台裝置的瀏覽器（共 ${countUser()} 筆）。換裝置或清除瀏覽資料會消失，請匯出備份。</p>`;
       }
     });
